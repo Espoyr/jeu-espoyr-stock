@@ -1,10 +1,10 @@
- <!-- V4(0) TEST - Build 190 - index-01 -->
+ <!-- V3(7) STOCK TEST - Build 207 - index-01 -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title># ESPOYR Multijoueur V4(0) TEST</title>
+    <title># ESPOYR Multijoueur V3(7) STOCK TEST</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -362,7 +362,7 @@
         <!-- ÉCRAN ACCUEIL -->
         <div id="homeScreen" class="card">
             <h1><img src="logo__g1_jaune_rond.png" alt="Logo ESPOYR" style="height: 1.5em; vertical-align: middle; margin-right: 8px;">ESPOYR</h1>
-            <p class="subtitle">Jeu collaboratif d'économie - V3(0) TEST</p>
+            <p class="subtitle">Jeu collaboratif d'économie - V3(7) STOCK TEST</p>
             <div class="error-message" id="errorMessage"></div>
             
             <div style="margin-bottom: 15px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
@@ -631,6 +631,9 @@
             280: { nom: 'Créances sur joueurs (Banque)', classe: 2, type: 'actif' },  // NOUVEAU
             291: { nom: 'Prêts à la clientèle', classe: 2, type: 'actif' },
             2919: { nom: 'Réduction de valeur actée', classe: 2, type: 'actif' },
+            // Classe 3 - Stocks (MODULE STOCKS)
+            301: { nom: 'Stock marchandises locales', classe: 3, type: 'actif' },
+            302: { nom: 'Stock marchandises importées', classe: 3, type: 'actif' },
             // Classe 4 - Tiers
             44: { nom: 'Dette Coop AAA / ASBL', classe: 4, type: 'passif' },
             400: { nom: 'Dettes perso', classe: 4, type: 'passif' },
@@ -657,6 +660,8 @@
             // Classe 6 - Charges
             601: { nom: 'Achats activités', classe: 6, type: 'charge' },
             602: { nom: 'Achats équipements', classe: 6, type: 'charge' },
+            607: { nom: 'Achats de marchandises', classe: 6, type: 'charge' },     // MODULE STOCKS
+            6037: { nom: 'Variation de stock', classe: 6, type: 'charge' },         // MODULE STOCKS
             611: { nom: 'Travaux / Sous-traitance', classe: 6, type: 'charge' },
             613: { nom: 'Frais divers', classe: 6, type: 'charge' },
             634: { nom: 'Dotation réduction valeur', classe: 6, type: 'charge' },
@@ -673,6 +678,7 @@
             700: { nom: 'Ventes / Factures', classe: 7, type: 'produit' },
             701: { nom: 'Salaires reçus', classe: 7, type: 'produit' },
             706: { nom: 'Travail coopératif', classe: 7, type: 'produit' },
+            707: { nom: 'Ventes de marchandises', classe: 7, type: 'produit' },    // MODULE STOCKS
             730: { nom: 'Produit travail coop', classe: 7, type: 'produit' },
             74: { nom: 'Subventions reçues (bonus #)', classe: 7, type: 'produit' },
             758: { nom: 'Produits divers', classe: 7, type: 'produit' },
@@ -755,28 +761,44 @@
         // ========== PLATEAU ESPOYR (23 cases) ==========
         const CASES = [
             { id: 0, type: 'start', name: 'Départ', icon: '🏁' },
-            { id: 1, type: 'activite', name: 'Vêtements', icon: '👔', prix: 200, facture: 40, hash: true, prixEquip: 100 },
+            { id: 1, type: 'activite', name: 'Vêtements', icon: '👔', prix: 200, facture: 40, hash: true, prixEquip: 100,
+              stock: { prixPassage: 25, marge: 2.65, budgetPct: 10, local: false, tvaPct: 0.21, achat: 'Vêtements fournisseur', vente: 'Vêtements magasin' } },
             { id: 2, type: 'ligne2', name: 'Frais culturels', icon: '🎭', cout: 50, description: 'Spectacles, musées, activités culturelles — chacun contribue à la vie culturelle.' },
-            { id: 3, type: 'activite', name: 'Pharmacie', icon: '💊', prix: 220, facture: 45, hash: true, prixEquip: 110 },
+            { id: 3, type: 'activite', name: 'Pharmacie', icon: '💊', prix: 220, facture: 45, hash: true, prixEquip: 110,
+              stock: { prixPassage: 50, marge: 1.475, budgetPct: 6, local: false, tvaPct: 0.06, achat: 'Médicaments', vente: 'Médicaments' } },
             { id: 4, type: 'chance', name: 'Chance', icon: '🍀' },
-            { id: 5, type: 'activite', name: 'Jardin', icon: '🌻', prix: 240, facture: 50, hash: true, prixEquip: 120 },
-            { id: 6, type: 'activite', name: 'Librairie', icon: '📚', prix: 180, facture: 35, hash: true, prixEquip: 90 },
-            { id: 7, type: 'activite', name: 'Boulangerie', icon: '🥖', prix: 200, facture: 45, hash: true, prixEquip: 100 },
-            { id: 8, type: 'activite', name: 'Coiffeur', icon: '✂️', prix: 160, facture: 30, hash: true, prixEquip: 80 },
+            { id: 5, type: 'activite', name: 'Boucherie', icon: '🥩', prix: 240, facture: 50, hash: true, prixEquip: 120,
+              stock: { prixPassage: 33, marge: 1.7, budgetPct: 12, local: true, tvaPct: 0.06, achat: 'Viande brute', vente: 'Viande préparée' } },
+            { id: 6, type: 'activite', name: 'Librairie', icon: '📚', prix: 180, facture: 35, hash: true, prixEquip: 90,
+              stock: { prixPassage: 30, marge: 1.4, budgetPct: 2, local: false, tvaPct: 0.06, achat: 'Livres éditeurs', vente: 'Livres clients' } },
+            { id: 7, type: 'activite', name: 'Boulangerie', icon: '🥖', prix: 200, facture: 45, hash: true, prixEquip: 100,
+              stock: { prixPassage: 40, marge: 2.9, budgetPct: 12, local: true, tvaPct: 0.06, achat: 'Farine, ingrédients', vente: 'Pain, viennoiseries' } },
+            { id: 8, type: 'activite', name: 'Coiffeur', icon: '✂️', prix: 160, facture: 30, hash: true, prixEquip: 80,
+              stock: { prixPassage: 20, marge: 3.75, budgetPct: 4, local: false, tvaPct: 0.21, achat: 'Produits capillaires', vente: 'Service coiffure' } },
             { id: 9, type: 'frais', name: 'Frais alimentaires', icon: '🍽️', cout: 50, description: 'Courses et repas — un besoin essentiel que chacun doit assumer.' },
-            { id: 10, type: 'activite', name: 'Fleuriste', icon: '🌸', prix: 150, facture: 28, hash: true, prixEquip: 75 },
-            { id: 11, type: 'activite', name: 'Café', icon: '☕', prix: 200, facture: 40, hash: true, prixEquip: 100 },
-            { id: 12, type: 'activite', name: 'Restaurant', icon: '🍽️', prix: 280, facture: 55, hash: true, prixEquip: 140 },
+            { id: 10, type: 'activite', name: 'Fleuriste', icon: '🌸', prix: 150, facture: 28, hash: true, prixEquip: 75,
+              stock: { prixPassage: 20, marge: 2.65, budgetPct: 1, local: false, tvaPct: 0.21, achat: 'Fleurs grossiste', vente: 'Bouquets' } },
+            { id: 11, type: 'activite', name: 'Café', icon: '☕', prix: 200, facture: 40, hash: true, prixEquip: 100,
+              stock: { prixPassage: 15, marge: 5.0, budgetPct: 2, local: true, tvaPct: 0.21, achat: 'Café, boissons', vente: 'Boissons servies' } },
+            { id: 12, type: 'activite', name: 'Restaurant', icon: '🍽️', prix: 280, facture: 55, hash: true, prixEquip: 140,
+              stock: { prixPassage: 17, marge: 3.25, budgetPct: 8, local: true, tvaPct: 0.12, achat: 'Ingrédients', vente: 'Plats préparés' } },
             { id: 13, type: 'taxe', name: 'Taxe', icon: '🏛️' },
-            { id: 14, type: 'activite', name: 'Garage', icon: '🔧', prix: 300, facture: 60, hash: true, prixEquip: 150 },
-            { id: 15, type: 'activite', name: 'Cordonnier', icon: '👟', prix: 320, facture: 60, hash: true, prixEquip: 160 },
-            { id: 16, type: 'activite', name: 'Bijouterie', icon: '💎', prix: 260, facture: 52, hash: true, prixEquip: 130 },
-            { id: 17, type: 'activite', name: 'Électricien', icon: '⚡', prix: 220, facture: 44, hash: true, prixEquip: 110 },
-            { id: 18, type: 'malchance', name: 'Opportunités', icon: '🎯' }, // malchance = OPPORTUNITÉS
-            { id: 19, type: 'activite', name: 'Plombier', icon: '🔩', prix: 240, facture: 48, hash: true, prixEquip: 120 },
+            { id: 14, type: 'activite', name: 'Garage', icon: '🔧', prix: 300, facture: 60, hash: true, prixEquip: 150,
+              stock: { prixPassage: 40, marge: 1.115, budgetPct: 18, local: false, tvaPct: 0.21, achat: 'Carburant', vente: 'Carburant' } },
+            { id: 15, type: 'activite', name: 'Poissonnerie', icon: '🐟', prix: 320, facture: 60, hash: true, prixEquip: 160,
+              stock: { prixPassage: 33, marge: 1.7, budgetPct: 4, local: true, tvaPct: 0.06, achat: 'Poisson brut', vente: 'Poisson préparé' } },
+            { id: 16, type: 'activite', name: 'Fromagerie', icon: '🧀', prix: 260, facture: 52, hash: true, prixEquip: 130,
+              stock: { prixPassage: 30, marge: 2.1, budgetPct: 4, local: true, tvaPct: 0.06, achat: 'Fromages grossiste', vente: 'Fromages détail' } },
+            { id: 17, type: 'activite', name: 'Chaussures', icon: '👞', prix: 220, facture: 44, hash: true, prixEquip: 110,
+              stock: { prixPassage: 22, marge: 2.1, budgetPct: 4, local: false, tvaPct: 0.21, achat: 'Chaussures fournisseur', vente: 'Chaussures magasin' } },
+            { id: 18, type: 'malchance', name: 'Opportunités', icon: '🎯' },
+            { id: 19, type: 'activite', name: 'Papeterie', icon: '📎', prix: 240, facture: 48, hash: true, prixEquip: 120,
+              stock: { prixPassage: 25, marge: 1.7, budgetPct: 2, local: false, tvaPct: 0.21, achat: 'Fournitures', vente: 'Fournitures' } },
             { id: 20, type: 'frais', name: 'Frais de soins', icon: '🩺', cout: 75, description: 'Consultation, médicaments — prendre soin de sa santé a un coût.' },
-            { id: 21, type: 'activite', name: 'Entrepreneur', icon: '🛠️', prix: 320, facture: 65, hash: true, prixEquip: 160 },
-            { id: 22, type: 'activite', name: 'Ferme', icon: '🐄', prix: 350, facture: 70, hash: true, prixEquip: 175 }
+            { id: 21, type: 'activite', name: 'Électronique', icon: '📱', prix: 320, facture: 65, hash: true, prixEquip: 160,
+              stock: { prixPassage: 67, marge: 1.175, budgetPct: 7, local: false, tvaPct: 0.21, achat: 'Appareils', vente: 'Appareils' } },
+            { id: 22, type: 'activite', name: 'Quincaillerie', icon: '🔨', prix: 350, facture: 70, hash: true, prixEquip: 175,
+              stock: { prixPassage: 30, marge: 1.7, budgetPct: 4, local: false, tvaPct: 0.21, achat: 'Matériel', vente: 'Matériel' } }
         ];
         
         // ========== HELPERS PRIX ÉQUIPEMENTS ==========
@@ -1770,7 +1792,14 @@
             collectifPrixDefaut: 200,
             collectifVoteTimer: 30,
             collectifFactureReduction: 0.80,
-            collectifEquipReduction: 0.70
+            collectifEquipReduction: 0.70,
+            // ═══ MODULE STOCKS & MARCHANDISES (optionnel) ═══
+            STOCKS_ACTIFS: false,          // Désactivé par défaut — activable au lancement
+            STOCKS_TVA_PCT: 0.21,          // TVA 21% sur ventes de marchandises
+            STOCKS_INTERET_PCT: 0.10,      // Intérêt emprunt stock 10%
+            STOCKS_DUREE_EMPRUNT: 5,       // Remboursement sur 5 tours
+            STOCKS_LISTE_TOURS: 3,         // Nouvelle liste de courses tous les 3 tours
+            STOCKS_EQUIP_BONUS: 0.10       // +10% marge par équipement
         };
         
         // Config modifiable par l'host
@@ -1794,6 +1823,10 @@
         // ═══ ÉTAT ACTIVITÉS COLLECTIVES ═══
         let casesCollectives = {};
         let achatCollectifEnCours = false;
+
+        // ═══ ÉTAT MODULE STOCKS ═══
+        let stockGestionDone = false;   // true quand le joueur a fermé le dashboard ce tour
+        let stockDashboardOpen = false; // empêche les ouvertures multiples
 
         // ========== REPRISE / TICKET JOUEUR (A+B) ==========
         const RESUME_KEY_PREFIX = 'ESPOYR_RESUME_';
@@ -4014,6 +4047,662 @@ function isAbsent(player) {
         }
         
         // Initialiser caisse activité
+        // ═══ MODULE STOCKS — Helpers ═══
+        function isStockActif() {
+            return !!(gameConfig.STOCKS_ACTIFS || CONFIG.STOCKS_ACTIFS);
+        }
+        
+        // Calcul des paramètres stock effectifs (avec bonus équipements)
+        // coutUnit = prix marchandise = FIXE (ne change jamais)
+        // marge effective = marge base × (1 + bonus × nbEquip)
+        // prixPassage effectif = coutUnit × marge effective
+        function getStockEffectif(actId) {
+            var c = CASES[actId];
+            if (!c || !c.stock) return null;
+            var act = COMPTABILITE.caisseActivites[actId] || {};
+            var nbEquip = (act.equipementA || 0) + (act.equipementB || 0);
+            var bonus = gameConfig.STOCKS_EQUIP_BONUS || CONFIG.STOCKS_EQUIP_BONUS || 0.10;
+            
+            var margeBase = c.stock.marge;
+            var margeEffective = arrondir2(margeBase * (1 + bonus * nbEquip));
+            var coutUnit = Math.ceil((c.stock.prixPassage / margeBase) * 100) / 100; // FIXE, basé sur marge de base
+            var prixPassage = arrondir2(coutUnit * margeEffective);
+            
+            return {
+                coutUnit: coutUnit,           // Prix marchandise (fixe)
+                margeBase: margeBase,          // Marge sans équipement
+                margeEffective: margeEffective,// Marge avec équipements
+                prixPassage: prixPassage,      // Prix client (augmente avec équip)
+                prixPassageBase: c.stock.prixPassage, // Prix client sans équip
+                nbEquip: nbEquip,
+                local: c.stock.local,
+                budgetPct: c.stock.budgetPct,
+                tvaPct: c.stock.tvaPct || 0.21
+            };
+        }
+        
+        // ═══ MODULE STOCKS — Tableau de bord gestion ═══
+        function showStockDashboard() {
+            const mesActivites = Object.entries(COMPTABILITE.caisseActivites || {})
+                .filter(function(e) { return e[1].proprietaireId === myPlayerId; });
+            
+            if (mesActivites.length === 0) {
+                stockGestionDone = true;
+                stockDashboardOpen = false;
+                return;
+            }
+            
+            let html = '<h3 style="margin:0 0 12px;text-align:center;">📦 Gestion de vos stocks</h3>';
+            html += '<p style="font-size:0.85rem;color:#6b7280;text-align:center;margin:0 0 16px;">Approvisionnez vos activités avant de lancer le dé</p>';
+            
+            for (var i = 0; i < mesActivites.length; i++) {
+                var actId = parseInt(mesActivites[i][0]);
+                var act = mesActivites[i][1];
+                var c = CASES[actId];
+                if (!c || !c.stock) continue;
+                
+                initCaisseActivite(actId);
+                var eff = getStockEffectif(actId);
+                
+                var stockCout = arrondir2(act.stockCout || 0);
+                var capVente = arrondir2(stockCout * eff.margeEffective);
+                var caisseE = arrondir2(act.stockCaisseE || 0);
+                var dette = arrondir2((act.stockEmprunts || []).reduce(function(s, e) { return s + (e.restant || 0); }, 0));
+                var alerte = capVente < eff.prixPassage;
+                var equipInfo = eff.nbEquip > 0 ? ' (×' + eff.margeEffective + ')' : '';
+                
+                html += '<div style="background:#f9fafb;border-radius:10px;padding:12px;margin-bottom:10px;border:1px solid ' + (alerte ? '#ef4444' : '#e5e7eb') + ';">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+                html += '<span style="font-size:1.2rem;">' + c.icon + ' <b>' + c.name + '</b>' + (eff.nbEquip > 0 ? ' 🔧' + eff.nbEquip : '') + '</span>';
+                html += '<span style="color:#a855f7;font-weight:700;">Passage: ' + eff.prixPassage + '€' + equipInfo + '</span>';
+                html += '</div>';
+                
+                html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.85rem;">';
+                html += '<span>Stock: <b style="color:#2563eb;">' + stockCout + '€</b></span>';
+                html += '<span>Vente: <b style="color:' + (alerte ? '#ef4444' : '#22c55e') + ';">' + capVente + '€</b>' + (alerte ? ' ⚠️' : '') + '</span>';
+                html += '<span>Caisse: <b style="color:#22c55e;">' + caisseE + '€</b></span>';
+                if (dette > 0) html += '<span>Dette: <b style="color:#ef4444;">-' + dette + '€</b></span>';
+                html += '</div>';
+                
+                html += '<div style="display:flex;gap:6px;margin-top:8px;">';
+                html += '<button class="btn" style="flex:1;background:#d97706;font-size:0.85rem;padding:8px;" onclick="showStockAppro(' + actId + ')">📦 Approvisionner</button>';
+                html += '</div>';
+                html += '</div>';
+            }
+            
+            showModal(html, '<button class="btn btn-primary" onclick="closeStockDashboard()">✅ Prêt — Lancer le dé</button>' +
+                '<button class="btn btn-secondary" onclick="closeStockDashboard()" style="margin-left:8px;">Passer</button>');
+        }
+        
+        function closeStockDashboard() {
+            closeModal();
+            stockGestionDone = true;
+            stockDashboardOpen = false;
+            // Réactiver le dé
+            var diceBtn = document.getElementById('rollDiceBtn');
+            if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+        }
+        
+        // ═══ MODULE STOCKS — Modal Approvisionnement ═══
+        function showStockAppro(actId) {
+            var c = CASES[actId];
+            if (!c || !c.stock) return;
+            var act = COMPTABILITE.caisseActivites[actId];
+            if (!act) return;
+            
+            var eff = getStockEffectif(actId);
+            var stockCout = arrondir2(act.stockCout || 0);
+            var capVente = arrondir2(stockCout * eff.margeEffective);
+            var caisseE = arrondir2(act.stockCaisseE || 0);
+            var dette = arrondir2((act.stockEmprunts || []).reduce(function(s, e) { return s + (e.restant || 0); }, 0));
+            var nbClients = Math.floor(capVente / eff.prixPassage);
+            
+            var html = '<h3 style="margin:0 0 8px;">' + c.icon + ' ' + c.name + ' — Approvisionner</h3>';
+            
+            // Info prix avec effet équipement
+            html += '<div style="background:#f3f4f6;border-radius:8px;padding:8px;margin-bottom:10px;font-size:0.85rem;">';
+            html += '<div style="color:#a855f7;font-weight:600;">Passage client: ' + eff.prixPassage + '€ TTC</div>';
+            html += '<div>Coût marchandise (fixe): <b style="color:#2563eb;">' + eff.coutUnit + '€</b></div>';
+            html += '<div>Marge ×' + eff.margeEffective + (eff.nbEquip > 0 ? ' (base ×' + eff.margeBase + ' + 🔧' + eff.nbEquip + ')' : '') + '</div>';
+            html += '</div>';
+            
+            // État actuel
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.85rem;margin-bottom:10px;">';
+            html += '<span>Caisse: <b style="color:#22c55e;">' + caisseE + '€</b></span>';
+            html += '<span>Stock: <b style="color:#2563eb;">' + stockCout + '€</b> (' + nbClients + ' clients)</span>';
+            if (dette > 0) html += '<span>Dette: <b style="color:#ef4444;">-' + dette + '€</b></span>';
+            html += '</div>';
+            
+            // Input montant
+            html += '<div style="margin-bottom:10px;">';
+            html += '<label style="font-size:0.85rem;color:#6b7280;">Montant à investir en stock (€)</label>';
+            html += '<input type="number" id="stockApproMontant" value="' + eff.coutUnit + '" min="0" step="0.01" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;margin-top:4px;box-sizing:border-box;">';
+            html += '</div>';
+            
+            // Boutons rapides clients
+            html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
+            html += '<button class="btn" style="flex:1;background:#f59e0b;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockApproMontant\').value=' + eff.coutUnit + '">1 client<br>' + eff.coutUnit + '€</button>';
+            html += '<button class="btn" style="flex:1;background:#d97706;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockApproMontant\').value=' + arrondir2(eff.coutUnit * 2) + '">2 clients<br>' + arrondir2(eff.coutUnit * 2) + '€</button>';
+            html += '<button class="btn" style="flex:1;background:#b45309;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockApproMontant\').value=' + arrondir2(eff.coutUnit * 3) + '">3 clients<br>' + arrondir2(eff.coutUnit * 3) + '€</button>';
+            html += '</div>';
+            
+            // Actions rapides finance
+            html += '<div style="border-top:1px solid #e5e7eb;padding-top:8px;margin-bottom:10px;">';
+            html += '<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">Besoin de fonds ?</div>';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+            html += '<button class="btn" style="background:#22c55e;font-size:0.8rem;padding:8px;" onclick="stockInvestir(' + actId + ')">INVESTIR €</button>';
+            html += '<button class="btn" style="background:#ef4444;font-size:0.8rem;padding:8px;" onclick="stockEmprunter(' + actId + ')">EMPRUNTER</button>';
+            html += '</div></div>';
+            
+            var btns = '<button class="btn btn-primary" onclick="validerStockAppro(' + actId + ')">✅ Approvisionner</button>';
+            btns += '<button class="btn btn-secondary" onclick="showStockDashboard()" style="margin-left:8px;">← Retour</button>';
+            
+            showModal(html, btns);
+        }
+        
+        // ═══ MODULE STOCKS — Valider approvisionnement ═══
+        function validerStockAppro(actId) {
+            var input = document.getElementById('stockApproMontant');
+            if (!input) return;
+            var montant = arrondir2(parseFloat(input.value) || 0);
+            if (montant <= 0) { alert('Montant invalide'); return; }
+            
+            var c = CASES[actId];
+            var act = COMPTABILITE.caisseActivites[actId];
+            var caisseE = arrondir2(act.stockCaisseE || 0);
+            
+            if (caisseE < montant) {
+                var persoEuro = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId]?.euro || 0);
+                alert('Caisse activité: ' + fmt(caisseE) + '€ (il faut ' + fmt(montant) + '€)\n\n' +
+                    'Votre compte perso: ' + fmt(persoEuro) + '€\n\n' +
+                    '→ INVESTIR €: transférer de votre perso vers la caisse\n' +
+                    '→ EMPRUNTER: crédit affecté à l\'activité\n\n' +
+                    'Vous pouvez emprunter plus que le minimum pour anticiper les achats futurs !');
+                return;
+            }
+            
+            // Déduire caisse, ajouter stock
+            act.stockCaisseE = arrondir2(caisseE - montant);
+            act.stockCout = arrondir2((act.stockCout || 0) + montant);
+            var eff = getStockEffectif(actId);
+            var capVente = arrondir2(montant * eff.margeEffective);
+            
+            // TVA déductible sur l'achat de stock (récupérable à Ligne 1)
+            var tvaDeduct = arrondir2(montant * eff.tvaPct / (1 + eff.tvaPct));
+            act.stockTvaDeductible = arrondir2((act.stockTvaDeductible || 0) + tvaDeduct);
+            
+            // DOUBLE ÉCRITURE — Entrée stock / Sortie caisse + TVA déductible
+            act.stockJournal.push({
+                op: 'APPRO', tour: gameState.toursComplets || 0,
+                debit: { compte: 301, nom: 'Stock marchandises', euro: montant, hash: 0 },
+                credit: { compte: 500, nom: 'Caisse activité', euro: montant, hash: 0 },
+                details: { tvaDeductible: tvaDeduct, tvaPct: eff.tvaPct },
+                timestamp: Date.now()
+            });
+            
+            sendSystemMessage('📦 ' + myName + ' approvisionne ' + c.icon + ' ' + c.name + ': ' + montant + '€ coût → ' + capVente + '€ vente possible');
+            syncComptabiliteToFirebase();
+            
+            // Retour au dashboard
+            showStockDashboard();
+        }
+        
+        // ═══ MODULE STOCKS — Investir € (perso → caisse activité) ═══
+        function stockInvestir(actId) {
+            var c = CASES[actId];
+            var act = COMPTABILITE.caisseActivites[actId];
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
+            var persoEuro = arrondir2(caisse.euro || 0);
+            
+            var html = '<h3>' + c.icon + ' ' + c.name + ' — Investir €</h3>';
+            html += '<p style="font-size:0.85rem;color:#6b7280;">Transférer de votre compte perso (' + persoEuro + '€) vers la caisse activité (' + arrondir2(act.stockCaisseE || 0) + '€)</p>';
+            html += '<input type="number" id="stockInvestMontant" value="50" min="0" step="5" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;box-sizing:border-box;">';
+            
+            showModal(html,
+                '<button class="btn btn-primary" onclick="validerStockInvestir(' + actId + ')">✅ Valider</button>' +
+                '<button class="btn btn-secondary" onclick="showStockAppro(' + actId + ')" style="margin-left:8px;">← Retour</button>');
+        }
+        
+        function validerStockInvestir(actId) {
+            var montant = arrondir2(parseFloat(document.getElementById('stockInvestMontant').value) || 0);
+            if (montant <= 0) return;
+            
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId];
+            var act = COMPTABILITE.caisseActivites[actId];
+            var c = CASES[actId];
+            
+            caisse.euro = arrondir2((caisse.euro || 0) - montant);
+            act.stockCaisseE = arrondir2((act.stockCaisseE || 0) + montant);
+            
+            // DOUBLE ÉCRITURE — Capitalisation perso → activité
+            enregistrerEcriture({
+                joueurId: myPlayerId,
+                libelle: 'Capitalisation stock ' + c.icon + ' ' + c.name,
+                compteDebit: 260, compteCredit: 500,
+                montantEuro: montant,
+                activiteId: actId,
+                contexte: 'stock_capitalisation'
+            });
+            act.stockJournal.push({
+                op: 'INVEST_E', tour: gameState.toursComplets || 0,
+                debit: { compte: 500, nom: 'Caisse activité', euro: montant, hash: 0 },
+                credit: { compte: 100, nom: 'Capital propriétaire', euro: montant, hash: 0 },
+                timestamp: Date.now()
+            });
+            
+            sendSystemMessage(myName + ' investit ' + montant + '€ dans ' + c.icon + ' ' + c.name);
+            syncComptabiliteToFirebase();
+            showStockAppro(actId);
+        }
+        
+        // ═══ MODULE STOCKS — Emprunter (crédit → caisse activité) ═══
+        function stockEmprunter(actId) {
+            var c = CASES[actId];
+            var act = COMPTABILITE.caisseActivites[actId];
+            
+            var html = '<h3>' + c.icon + ' ' + c.name + ' — Emprunter</h3>';
+            html += '<p style="font-size:0.85rem;color:#6b7280;">Crédit affecté à l\'activité. ' + (CONFIG.STOCKS_INTERET_PCT * 100) + '% intérêt, remboursement sur ' + CONFIG.STOCKS_DUREE_EMPRUNT + ' tours.</p>';
+            html += '<input type="number" id="stockEmpruntMontant" value="50" min="0" step="5" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;box-sizing:border-box;">';
+            html += '<div style="display:flex;gap:6px;margin-top:8px;">';
+            html += '<button class="btn" style="flex:1;background:#d1d5db;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockEmpruntMontant\').value=25">25€</button>';
+            html += '<button class="btn" style="flex:1;background:#d1d5db;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockEmpruntMontant\').value=50">50€</button>';
+            html += '<button class="btn" style="flex:1;background:#d1d5db;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockEmpruntMontant\').value=100">100€</button>';
+            html += '</div>';
+            
+            showModal(html,
+                '<button class="btn btn-primary" onclick="validerStockEmprunt(' + actId + ')">✅ Emprunter</button>' +
+                '<button class="btn btn-secondary" onclick="showStockAppro(' + actId + ')" style="margin-left:8px;">← Retour</button>');
+        }
+        
+        function validerStockEmprunt(actId) {
+            var montant = arrondir2(parseFloat(document.getElementById('stockEmpruntMontant').value) || 0);
+            if (montant <= 0) return;
+            
+            var act = COMPTABILITE.caisseActivites[actId];
+            var c = CASES[actId];
+            var interet = arrondir2(montant * CONFIG.STOCKS_INTERET_PCT);
+            var total = arrondir2(montant + interet);
+            var mensualite = arrondir2(total / CONFIG.STOCKS_DUREE_EMPRUNT);
+            
+            act.stockEmprunts.push({
+                capital: montant, interet: interet, total: total,
+                mensualite: mensualite, restant: total,
+                tourDebut: gameState.toursComplets || 0
+            });
+            act.stockCaisseE = arrondir2((act.stockCaisseE || 0) + montant);
+            
+            // DOUBLE ÉCRITURE — Emprunt affecté à l'activité (capital seul, intérêts = charge future)
+            act.stockJournal.push({
+                op: 'EMPRUNT', tour: gameState.toursComplets || 0,
+                debit: { compte: 500, nom: 'Caisse activité', euro: montant, hash: 0 },
+                credit: { compte: 164, nom: 'Emprunt bancaire', euro: montant, hash: 0 },
+                details: { interet: interet, total: total, mensualite: mensualite },
+                timestamp: Date.now()
+            });
+            
+            sendSystemMessage('🏦 ' + myName + ' emprunte ' + montant + '€ pour ' + c.icon + ' ' + c.name + ' (mens: ' + mensualite + '€/tour)');
+            syncComptabiliteToFirebase();
+            showStockAppro(actId);
+        }
+        
+        // ═══ MODULE STOCKS — Atterrissage sur activité avec stock ═══
+        async function handleStockLanding(c, position, ownerId, currentEuro) {
+            var act = COMPTABILITE.caisseActivites[position];
+            if (!act) { nextTurn(); return; }
+            
+            initCaisseActivite(position);
+            var eff = getStockEffectif(position);
+            var stockCout = arrondir2(act.stockCout || 0);
+            var capVente = arrondir2(stockCout * eff.margeEffective);
+            var ownerPlayer = Object.values(playersData).find(function(p) { return p.id === ownerId; });
+            var ownerName = ownerPlayer ? ownerPlayer.name : 'Propriétaire';
+            var myEspoyr = arrondirHash(COMPTABILITE.caisseJoueurs[myPlayerId]?.espoyr || 0);
+            
+            // ═══ RUPTURE DE STOCK ═══
+            if (capVente < 1) {
+                sendSystemMessage('❌ ' + myName + ' passe chez ' + c.icon + ' ' + c.name + ' — RUPTURE DE STOCK ! Rien à acheter.');
+                showModal(
+                    '<h3>' + c.icon + ' ' + c.name + '</h3>' +
+                    '<p>Propriétaire : <b>' + (ownerPlayer ? ownerPlayer.avatar + ' ' : '') + ownerName + '</b></p>' +
+                    '<div style="background:#fee2e2;padding:12px;border-radius:8px;text-align:center;margin:10px 0;">' +
+                    '<span style="font-size:2rem;">🔺</span><br>' +
+                    '<b style="color:#dc2626;font-size:1.1rem;">RUPTURE DE STOCK</b><br>' +
+                    '<span style="color:#6b7280;">Le propriétaire n\'a pas approvisionné. Vous passez sans acheter.</span>' +
+                    '</div>',
+                    '<button class="btn btn-primary" onclick="closeModal(); nextTurn();">OK</button>'
+                );
+                return;
+            }
+            
+            // ═══ STOCK PARTIEL ═══
+            var prixPassage = eff.prixPassage;
+            var partiel = capVente < prixPassage;
+            var montantReel = partiel ? arrondir2(capVente) : prixPassage;
+            
+            // Calcul TVA
+            var tvaPct = eff.tvaPct;
+            var tva = arrondir2(montantReel * tvaPct / (1 + tvaPct));
+            var ht = arrondir2(montantReel - tva);
+            
+            // Modal de paiement
+            var html = '<h3>' + c.icon + ' ' + c.name + '</h3>';
+            html += '<p>Propriétaire : <b>' + (ownerPlayer ? ownerPlayer.avatar + ' ' : '') + ownerName + '</b></p>';
+            
+            if (partiel) {
+                html += '<div style="background:#fef3c7;padding:8px;border-radius:8px;margin:8px 0;border:1px solid #f59e0b;">';
+                html += '<b style="color:#d97706;">⚠️ Stock partiel</b> — seulement ' + montantReel + '€ disponible sur ' + prixPassage + '€';
+                html += '</div>';
+            }
+            
+            html += '<div style="background:#f3f4f6;padding:10px;border-radius:8px;margin:10px 0;">';
+            html += '<p style="margin:0;"><b>Montant :</b> <span style="font-size:1.2rem;color:#a855f7;">' + montantReel + '€ TTC</span></p>';
+            html += '<p style="margin:4px 0 0;font-size:0.85rem;color:#6b7280;">HT: ' + ht + '€ | TVA: ' + tva + '€</p>';
+            if (eff.nbEquip > 0) html += '<p style="margin:4px 0 0;font-size:0.85rem;">Équipements: 🔧' + eff.nbEquip + ' (marge ×' + eff.margeEffective + ')</p>';
+            html += '</div>';
+            
+            html += '<div style="background:#dbeafe;padding:10px;border-radius:8px;margin:10px 0;">';
+            html += '<p style="margin:0;"><b>Ton solde :</b> ' + fmt(currentEuro) + '€ / ' + fmt(myEspoyr) + '#</p>';
+            html += '</div>';
+            
+            var canPayEuro = currentEuro >= montantReel;
+            var canPayMixed = (currentEuro + myEspoyr) >= montantReel && myEspoyr > 0 && c.stock.local;
+            var nbReportsActifs = (COMPTABILITE.dettesEntreJoueurs || []).filter(function(d) { return d.debiteurId === myPlayerId; }).length;
+            var canReport = nbReportsActifs < 3;
+            
+            var buttons = '';
+            if (canPayEuro) {
+                buttons += '<button class="btn btn-primary" onclick="payStockOwner(' + position + ',\'' + ownerId + '\',' + montantReel + ',0)">💶 Payer ' + montantReel + '€</button>';
+            }
+            if (canPayMixed && c.stock.local) {
+                var maxHash = arrondirHash(Math.min(myEspoyr, montantReel * 0.5));
+                var partEuro = arrondir2(montantReel - maxHash);
+                buttons += '<button class="btn" style="background:#dcfce7;color:#059669;" onclick="payStockOwner(' + position + ',\'' + ownerId + '\',' + partEuro + ',' + maxHash + ')">Mix ' + partEuro + '€ + ' + maxHash + '#</button>';
+            }
+            if (!canPayEuro && !canPayMixed) {
+                // Pas assez → proposer découvert et/ou report
+                buttons += '<p style="color:#dc2626;font-weight:bold;margin:0 0 8px;">⚠️ Solde insuffisant</p>';
+                buttons += '<button class="btn" style="background:#ef4444;color:white;" onclick="payStockOwner(' + position + ',\'' + ownerId + '\',' + montantReel + ',0)">💳 Découvert (-' + fmt(montantReel - currentEuro) + '€)</button>';
+                if (canReport) {
+                    buttons += '<button class="btn" style="background:#f59e0b;color:white;margin-left:6px;" onclick="reportStockPaiement(' + position + ',\'' + ownerId + '\',' + montantReel + ')">📜 Report (' + nbReportsActifs + '/3)</button>';
+                } else {
+                    buttons += '<p style="font-size:0.8rem;color:#6b7280;margin:4px 0 0;">📜 Report indisponible (3/3 max atteint)</p>';
+                }
+            }
+            if (canPayEuro || canPayMixed) {
+                buttons += '<button class="btn btn-secondary" onclick="closeModal(); nextTurn();" style="margin-left:8px;">Refuser</button>';
+            }
+            
+            showModal(html, buttons);
+        }
+        
+        // ═══ MODULE STOCKS — Paiement au propriétaire via stock ═══
+        function payStockOwner(actId, ownerId, montantEuro, montantHash) {
+            var c = CASES[actId];
+            var act = COMPTABILITE.caisseActivites[actId];
+            var eff = getStockEffectif(actId);
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId];
+            
+            montantEuro = arrondir2(montantEuro);
+            montantHash = arrondirHash(montantHash);
+            var total = arrondir2(montantEuro + montantHash);
+            
+            // 1. Déduire stock au coût
+            var coutVendu = arrondir2(total / eff.margeEffective);
+            act.stockCout = arrondir2(Math.max(0, (act.stockCout || 0) - coutVendu));
+            
+            // 2. Client paie
+            caisse.euro = arrondir2((caisse.euro || 0) - montantEuro);
+            caisse.espoyr = arrondirHash((caisse.espoyr || 0) - montantHash);
+            
+            // 3. Propriétaire encaisse dans caisse activité
+            act.stockCaisseE = arrondir2((act.stockCaisseE || 0) + montantEuro);
+            act.stockCaisseH = arrondirHash((act.stockCaisseH || 0) + montantHash);
+            
+            // 4. TVA
+            var tvaPct = eff.tvaPct;
+            var tva = arrondir2(total * tvaPct / (1 + tvaPct));
+            var ht = arrondir2(total - tva);
+            act.stockTvaCollectee = arrondir2((act.stockTvaCollectee || 0) + tva);
+            act.stockVentesHT = arrondir2((act.stockVentesHT || 0) + ht);
+            
+            // 5. DOUBLE ÉCRITURE — Côté client (achat)
+            if (montantEuro > 0) {
+                enregistrerEcriture({
+                    joueurId: myPlayerId,
+                    libelle: 'Achat marchandise ' + c.icon + ' ' + c.name + ' (stock)',
+                    compteDebit: 613, compteCredit: 500,
+                    montantEuro: montantEuro,
+                    activiteId: actId,
+                    contexte: 'stock_achat_client'
+                });
+            }
+            if (montantHash > 0) {
+                enregistrerEcriture({
+                    joueurId: myPlayerId,
+                    libelle: 'Achat marchandise # ' + c.icon + ' ' + c.name + ' (stock)',
+                    compteDebit: 613, compteCredit: 501,
+                    montantEspoyr: montantHash,
+                    activiteId: actId,
+                    contexte: 'stock_achat_client_hash'
+                });
+            }
+            
+            // 6. DOUBLE ÉCRITURE — Côté activité (vente + sortie stock)
+            // Écriture 1 : Encaissement vente (TTC = TTC, TVA tracée séparément dans stockTvaCollectee)
+            var totalEncaisse = arrondir2(montantEuro + montantHash);
+            act.stockJournal.push({
+                op: 'VENTE', tour: gameState.toursComplets || 0,
+                debit: { compte: 500, nom: 'Caisse activité', euro: montantEuro, hash: montantHash },
+                credit: { compte: 707, nom: 'Ventes marchandises', euro: montantEuro, hash: montantHash },
+                details: { ttc: totalEncaisse, ht: ht, tva: tva },
+                client: myPlayerId,
+                timestamp: Date.now()
+            });
+            // Écriture 2 : Sortie de stock (coût des marchandises vendues)
+            act.stockJournal.push({
+                op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
+                debit: { compte: 607, nom: 'Achats marchandises', euro: coutVendu, hash: 0 },
+                credit: { compte: 301, nom: 'Stock marchandises', euro: coutVendu, hash: 0 },
+                timestamp: Date.now()
+            });
+            
+            // 7. PIB
+            if (typeof ajouterPIB === 'function') ajouterPIB(ht);
+            
+            var hashStr = montantHash > 0 ? ' (' + montantEuro + '€+' + montantHash + '#)' : '';
+            var ownerPlayer = Object.values(playersData).find(function(p) { return p.id === ownerId; });
+            sendSystemMessage('✅ ' + myName + ' achète chez ' + c.icon + ' ' + c.name + ' de ' + (ownerPlayer ? ownerPlayer.name : ownerId) + ': ' + total + '€' + hashStr);
+            
+            syncComptabiliteToFirebase();
+            closeModal();
+            nextTurn();
+        }
+        
+        // ═══ MODULE STOCKS — Report de paiement (dette inter-joueurs) ═══
+        function reportStockPaiement(actId, ownerId, montant) {
+            var c = CASES[actId];
+            var act = COMPTABILITE.caisseActivites[actId];
+            var eff = getStockEffectif(actId);
+            
+            montant = arrondir2(montant);
+            var coutVendu = arrondir2(montant / eff.margeEffective);
+            var tvaPct = eff.tvaPct;
+            var tva = arrondir2(montant * tvaPct / (1 + tvaPct));
+            var ht = arrondir2(montant - tva);
+            
+            // 1. Stock sort (la marchandise est livrée)
+            act.stockCout = arrondir2(Math.max(0, (act.stockCout || 0) - coutVendu));
+            
+            // 2. TVA collectée (facture émise même si pas payée)
+            act.stockTvaCollectee = arrondir2((act.stockTvaCollectee || 0) + tva);
+            act.stockVentesHT = arrondir2((act.stockVentesHT || 0) + ht);
+            
+            // 3. Créer la dette dans dettesEntreJoueurs
+            if (!COMPTABILITE.dettesEntreJoueurs) COMPTABILITE.dettesEntreJoueurs = [];
+            COMPTABILITE.dettesEntreJoueurs.push({
+                debiteurId: myPlayerId,
+                createurId: ownerId,
+                montant: montant,
+                caseId: actId,
+                caseName: c.name,
+                isStock: true,
+                tour: gameState?.toursComplets || 0,
+                timestamp: Date.now()
+            });
+            
+            // 4. DOUBLE ÉCRITURE — Débiteur : charge reconnue, dette fournisseur
+            enregistrerEcriture({
+                joueurId: myPlayerId,
+                libelle: 'Report paiement stock ' + c.icon + ' ' + c.name + ' → ' + (Object.values(playersData).find(function(p){return p.id===ownerId;})?.name || ownerId),
+                compteDebit: 613, compteCredit: 401,
+                montantEuro: montant,
+                contexte: 'reportPaiementStock',
+                details: { type: 'report', createurId: ownerId, caseId: actId, isStock: true }
+            });
+            
+            // 5. DOUBLE ÉCRITURE — Créancier : revenu reconnu, créance client
+            enregistrerEcriture({
+                joueurId: ownerId,
+                libelle: 'Créance stock report ' + c.icon + ' de ' + myName,
+                compteDebit: 416, compteCredit: 700,
+                montantEuro: montant,
+                contexte: 'reportPaiementStock',
+                details: { type: 'report', debiteurId: myPlayerId, caseId: actId, isStock: true }
+            });
+            
+            // 6. Journal activité — vente + sortie stock
+            act.stockJournal.push({
+                op: 'VENTE_REPORT', tour: gameState.toursComplets || 0,
+                debit: { compte: 416, nom: 'Créance client', euro: montant, hash: 0 },
+                credit: { compte: 707, nom: 'Ventes marchandises', euro: montant, hash: 0 },
+                details: { ttc: montant, ht: ht, tva: tva, debiteurId: myPlayerId },
+                timestamp: Date.now()
+            });
+            act.stockJournal.push({
+                op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
+                debit: { compte: 607, nom: 'Achats marchandises', euro: coutVendu, hash: 0 },
+                credit: { compte: 301, nom: 'Stock marchandises', euro: coutVendu, hash: 0 },
+                timestamp: Date.now()
+            });
+            
+            // 7. PIB
+            if (typeof ajouterPIB === 'function') ajouterPIB(ht);
+            
+            var ownerPlayer = Object.values(playersData).find(function(p) { return p.id === ownerId; });
+            sendSystemMessage('📜 ' + myName + ' → report paiement ' + c.icon + ' ' + c.name + ': ' + fmt(montant) + '€ (dette envers ' + (ownerPlayer ? ownerPlayer.name : ownerId) + ')');
+            
+            syncComptabiliteToFirebase();
+            closeModal();
+            nextTurn();
+        }
+        
+        // ═══ MODULE STOCKS — Gestion automatique des bots ═══
+        async function botGestionStock(bot, profil) {
+            var mesActs = Object.entries(COMPTABILITE.caisseActivites || {})
+                .filter(function(e) { return e[1].proprietaireId === bot.id; });
+            
+            if (mesActs.length === 0) return;
+            
+            // Nombre de clients visé selon le profil
+            var nbClientsVise = 2; // défaut
+            var empruntAgressif = false;
+            var profilId = profil.id || 'EQUILIBRE';
+            
+            if (profilId === 'PREDATEUR') { nbClientsVise = 1; empruntAgressif = false; }
+            else if (profilId === 'PRUDENT') { nbClientsVise = 2; empruntAgressif = false; }
+            else if (profilId === 'COOPERATIF') { nbClientsVise = 3; empruntAgressif = false; }
+            else if (profilId === 'EQUILIBRE') { nbClientsVise = 2; empruntAgressif = false; }
+            else if (profilId === 'INVESTISSEUR') { nbClientsVise = 3; empruntAgressif = true; }
+            else if (profilId === 'SOLIDAIRE') { nbClientsVise = 3; empruntAgressif = false; }
+            
+            for (var i = 0; i < mesActs.length; i++) {
+                var actId = parseInt(mesActs[i][0]);
+                var act = mesActs[i][1];
+                var c = CASES[actId];
+                if (!c || !c.stock) continue;
+                
+                initCaisseActivite(actId);
+                var eff = getStockEffectif(actId);
+                var stockCout = arrondir2(act.stockCout || 0);
+                var capVente = arrondir2(stockCout * eff.margeEffective);
+                var caisseE = arrondir2(act.stockCaisseE || 0);
+                
+                // Combien faut-il pour servir nbClientsVise ?
+                var coutVise = arrondir2(eff.coutUnit * nbClientsVise);
+                var manque = arrondir2(Math.max(0, coutVise - stockCout));
+                
+                if (manque <= 0) continue; // Stock suffisant
+                
+                // Besoin de fonds ?
+                if (caisseE < manque) {
+                    // D'abord capitaliser depuis le compte perso
+                    var caissePerso = arrondir2(COMPTABILITE.caisseJoueurs[bot.id]?.euro || 0);
+                    var aCapitaliser = arrondir2(Math.min(manque - caisseE, Math.max(0, caissePerso * 0.3)));
+                    
+                    if (aCapitaliser > 0) {
+                        COMPTABILITE.caisseJoueurs[bot.id].euro = arrondir2(caissePerso - aCapitaliser);
+                        act.stockCaisseE = arrondir2(caisseE + aCapitaliser);
+                        caisseE = act.stockCaisseE;
+                        act.stockJournal.push({
+                            op: 'INVEST_E', tour: gameState.toursComplets || 0,
+                            debit: { compte: 500, nom: 'Caisse activité', euro: aCapitaliser, hash: 0 },
+                            credit: { compte: 100, nom: 'Capital propriétaire', euro: aCapitaliser, hash: 0 },
+                            timestamp: Date.now()
+                        });
+                        sendSystemMessage('🤖 ' + bot.name + ' investit ' + fmt(aCapitaliser) + '€ dans ' + c.icon);
+                    }
+                    
+                    // Si toujours pas assez et profil le permet → emprunter
+                    if (caisseE < manque && (empruntAgressif || profilId !== 'PREDATEUR')) {
+                        var aEmprunter = arrondir2(manque - caisseE + eff.coutUnit); // un peu de marge
+                        var interet = arrondir2(aEmprunter * CONFIG.STOCKS_INTERET_PCT);
+                        var total = arrondir2(aEmprunter + interet);
+                        var mensualite = arrondir2(total / CONFIG.STOCKS_DUREE_EMPRUNT);
+                        
+                        act.stockEmprunts.push({
+                            capital: aEmprunter, interet: interet, total: total,
+                            mensualite: mensualite, restant: total,
+                            tourDebut: gameState.toursComplets || 0
+                        });
+                        act.stockCaisseE = arrondir2(act.stockCaisseE + aEmprunter);
+                        caisseE = act.stockCaisseE;
+                        act.stockJournal.push({
+                            op: 'EMPRUNT', tour: gameState.toursComplets || 0,
+                            debit: { compte: 500, nom: 'Caisse activité', euro: aEmprunter, hash: 0 },
+                            credit: { compte: 164, nom: 'Emprunt bancaire', euro: aEmprunter, hash: 0 },
+                            details: { interet: interet, total: total, mensualite: mensualite },
+                            timestamp: Date.now()
+                        });
+                        sendSystemMessage('🤖🏦 ' + bot.name + ' emprunte ' + fmt(aEmprunter) + '€ pour ' + c.icon);
+                    }
+                }
+                
+                // Approvisionner avec ce qui est disponible
+                var aAppro = arrondir2(Math.min(manque, caisseE));
+                if (aAppro > 0) {
+                    act.stockCaisseE = arrondir2(caisseE - aAppro);
+                    act.stockCout = arrondir2(stockCout + aAppro);
+                    
+                    // TVA déductible sur achat
+                    var tvaDeduct = arrondir2(aAppro * eff.tvaPct / (1 + eff.tvaPct));
+                    act.stockTvaDeductible = arrondir2((act.stockTvaDeductible || 0) + tvaDeduct);
+                    
+                    act.stockJournal.push({
+                        op: 'APPRO', tour: gameState.toursComplets || 0,
+                        debit: { compte: 301, nom: 'Stock marchandises', euro: aAppro, hash: 0 },
+                        credit: { compte: 500, nom: 'Caisse activité', euro: aAppro, hash: 0 },
+                        details: { tvaDeductible: tvaDeduct, tvaPct: eff.tvaPct },
+                        timestamp: Date.now()
+                    });
+                    
+                    var newCapVente = arrondir2(act.stockCout * eff.margeEffective);
+                    sendSystemMessage('🤖📦 ' + bot.name + ' appro ' + c.icon + ' ' + c.name + ': ' + fmt(aAppro) + '€ → vente ' + fmt(newCapVente) + '€');
+                }
+            }
+            
+            await syncComptabiliteToFirebase();
+        }
+        
         function initCaisseActivite(actId) {
             if (!COMPTABILITE.caisseActivites[actId]) {
                 const c = CASES[actId];
@@ -4025,6 +4714,19 @@ function isAbsent(player) {
                     recettes: 0, depenses: 0, 
                     journal: []
                 };
+            }
+            // ═══ STOCKS : champs additionnels (migration-safe) ═══
+            if (isStockActif()) {
+                const act = COMPTABILITE.caisseActivites[actId];
+                if (act.stockCout === undefined) act.stockCout = 0;           // Stock au coût d'achat (€)
+                if (act.stockCaisseE === undefined) act.stockCaisseE = 0;     // Caisse € de l'activité
+                if (act.stockCaisseH === undefined) act.stockCaisseH = 0;     // Caisse # de l'activité
+                if (act.stockTvaCollectee === undefined) act.stockTvaCollectee = 0; // TVA collectée (à reverser)
+                if (act.stockTvaDeductible === undefined) act.stockTvaDeductible = 0; // TVA déductible (sur achats stock)
+                if (act.stockTvaDeductible === undefined) act.stockTvaDeductible = 0; // TVA déductible (récupérable sur achats)
+                if (act.stockVentesHT === undefined) act.stockVentesHT = 0;   // Ventes HT du tour (pour taxe)
+                if (!act.stockEmprunts) act.stockEmprunts = [];               // Emprunts affectés à l'activité
+                if (!act.stockJournal) act.stockJournal = [];                 // Journal comptable stock
             }
         }
         
@@ -7228,6 +7930,18 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
                         <br>➡️ Horaire ou ⬅️ Anti-horaire - c'est vous qui décidez !
                     </p>
                 </div>
+                
+                <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #f59e0b;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="configStocksActifs" style="width:20px;height:20px;cursor:pointer;" ${gameConfig.STOCKS_ACTIFS ? 'checked' : ''}>
+                        <label for="configStocksActifs" style="font-weight: bold; color: #92400e; cursor: pointer;">📦 Module Stocks & Marchandises</label>
+                    </div>
+                    <p style="margin: 8px 0 0 16px; font-size: 0.85rem; color: #78716c;">
+                        Chaque activité possède un stock à gérer. Le propriétaire approvisionne avant de lancer le dé.
+                        Les clients ne peuvent acheter que si le stock est disponible.
+                        <br><strong>⚠️ Mode avancé</strong> — recommandé pour joueurs expérimentés.
+                    </p>
+                </div>
             `, `
                 <button class="btn btn-primary" onclick="confirmStartGame()">🎮 Commencer</button>
                 <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
@@ -7238,6 +7952,13 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
         let sensDeplacementGlobal = 1;  // 1 = horaire, -1 = anti-horaire
         
         async function confirmStartGame() {
+            // ═══ MODULE STOCKS : lire l'option AVANT de fermer le modal ═══
+            var stockCheckbox = document.getElementById('configStocksActifs');
+            if (stockCheckbox) {
+                gameConfig.STOCKS_ACTIFS = stockCheckbox.checked;
+                console.log('📦 Module Stocks: ' + (gameConfig.STOCKS_ACTIFS ? 'ACTIVÉ' : 'désactivé'));
+            }
+            
             closeModal();
             
             // Vérifier le nombre minimum de joueurs selon le mode (Solo/Multi)
@@ -7316,6 +8037,9 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
             
             // Sauvegarder la comptabilité mise à jour
             await syncComptabiliteToFirebase();
+            
+            // Sauvegarder la configuration (incluant STOCKS_ACTIFS)
+            await db.ref('parties/' + currentGameCode + '/config').set(gameConfig);
             
             // Démarrer la partie
             await gameRef.child('state/started').set(true);
@@ -7741,7 +8465,7 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 { nom: 'Coiffeur', prix: 160 },
                 { nom: 'Boulangerie', prix: 200 },
                 { nom: 'Restaurant', prix: 280 },
-                { nom: 'Ferme', prix: 350 },
+                { nom: 'Quincaillerie', prix: 350 },
             ].map(ex => {
                 const base = Math.floor(ex.prix * (gameConfig.factureBasePct ?? CONFIG.factureBasePct));
                 const indexee = Math.max(1, Math.floor(base * stats.facteur));
@@ -7899,6 +8623,20 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 const diceBtn = document.getElementById('rollDiceBtn');
                 diceBtn.disabled = !isMyTurn;
                 diceBtn.style.opacity = isMyTurn ? '1' : '0.5';
+                
+                // ═══ MODULE STOCKS : intercepter avant le lancer ═══
+                if (isMyTurn && isStockActif() && !stockGestionDone && !isBot) {
+                    // Vérifier que le joueur possède au moins une activité
+                    const mesActivites = Object.entries(COMPTABILITE.caisseActivites || {})
+                        .filter(function(e) { return e[1].proprietaireId === myPlayerId; });
+                    if (mesActivites.length > 0 && !stockDashboardOpen) {
+                        diceBtn.disabled = true;
+                        diceBtn.style.opacity = '0.5';
+                        // Ouvrir le dashboard automatiquement (délai pour éviter conflit modal)
+                        stockDashboardOpen = true;
+                        setTimeout(function() { showStockDashboard(); }, 500);
+                    }
+                }
 
 // Clignotement de l'onglet
 if (isMyTurn) {
@@ -8932,6 +9670,132 @@ function initSystemeDe() {
             // Comptabilité salaire €
             const ecriture = await comptaSalaire(myPlayerId, salaire, deSalaire);
             
+            // ═══ MODULE STOCKS — Consolidation au passage Ligne 1 ═══
+            let stockTvaTotal = 0, stockTaxeTotal = 0, stockMensTotal = 0;
+            if (isStockActif()) {
+                const mesActs = Object.entries(COMPTABILITE.caisseActivites || {})
+                    .filter(function(e) { return e[1].proprietaireId === myPlayerId; });
+                
+                for (var si = 0; si < mesActs.length; si++) {
+                    var sActId = parseInt(mesActs[si][0]);
+                    var sAct = mesActs[si][1];
+                    var sCase = CASES[sActId];
+                    initCaisseActivite(sActId);
+                    
+                    // 1. TVA nette = collectée - déductible (payée/remboursée au passage Ligne 1)
+                    var sTvaCollectee = arrondir2(sAct.stockTvaCollectee || 0);
+                    var sTvaDeductible = arrondir2(sAct.stockTvaDeductible || 0);
+                    var sTvaNette = arrondir2(sTvaCollectee - sTvaDeductible);
+                    sAct.stockTvaCollectee = 0;
+                    sAct.stockTvaDeductible = 0;
+                    
+                    if (sTvaNette > 0) {
+                        // TVA nette positive → reverser à l'État
+                        stockTvaTotal = arrondir2(stockTvaTotal + sTvaNette);
+                        sAct.stockJournal.push({
+                            op: 'TVA_NETTE', tour: gameState.toursComplets || 0,
+                            debit: { compte: 445, nom: 'TVA à payer', euro: sTvaNette, hash: 0 },
+                            credit: { compte: 500, nom: 'Caisse (→ État)', euro: sTvaNette, hash: 0 },
+                            details: { collectee: sTvaCollectee, deductible: sTvaDeductible },
+                            timestamp: Date.now()
+                        });
+                    } else if (sTvaNette < 0) {
+                        // TVA nette négative → remboursement de l'État
+                        var rembourseTva = arrondir2(Math.abs(sTvaNette));
+                        stockTvaTotal = arrondir2(stockTvaTotal - rembourseTva);
+                        sAct.stockJournal.push({
+                            op: 'TVA_REMBOURSEE', tour: gameState.toursComplets || 0,
+                            debit: { compte: 500, nom: 'Caisse (← État)', euro: rembourseTva, hash: 0 },
+                            credit: { compte: 411, nom: 'TVA à récupérer', euro: rembourseTva, hash: 0 },
+                            details: { collectee: sTvaCollectee, deductible: sTvaDeductible },
+                            timestamp: Date.now()
+                        });
+                    }
+                    
+                    // 2. Taxe 20% sur revenus HT des ventes stock
+                    var sVentesHT = arrondir2(sAct.stockVentesHT || 0);
+                    if (sVentesHT > 0) {
+                        var sTaxe = arrondir2(sVentesHT * 0.20);
+                        stockTaxeTotal = arrondir2(stockTaxeTotal + sTaxe);
+                        sAct.stockVentesHT = 0;
+                        sAct.stockJournal.push({
+                            op: 'TAXE_REVENU', tour: gameState.toursComplets || 0,
+                            debit: { compte: 635, nom: 'Taxes et impôts', euro: sTaxe, hash: 0 },
+                            credit: { compte: 500, nom: 'Caisse (→ État)', euro: sTaxe, hash: 0 },
+                            details: { ventesHT: sVentesHT, taux: 0.20 },
+                            timestamp: Date.now()
+                        });
+                    }
+                    
+                    // 3. Mensualités emprunts stock
+                    if (sAct.stockEmprunts) {
+                        for (var ei = 0; ei < sAct.stockEmprunts.length; ei++) {
+                            var emp = sAct.stockEmprunts[ei];
+                            if (emp.restant > 0) {
+                                var mens = arrondir2(Math.min(emp.mensualite, emp.restant));
+                                stockMensTotal = arrondir2(stockMensTotal + mens);
+                                emp.restant = arrondir2(emp.restant - mens);
+                                sAct.stockJournal.push({
+                                    op: 'MENSUALITE', tour: gameState.toursComplets || 0,
+                                    debit: { compte: 164, nom: 'Emprunt bancaire', euro: mens, hash: 0 },
+                                    credit: { compte: 500, nom: 'Caisse (→ Banque)', euro: mens, hash: 0 },
+                                    details: { restant: emp.restant },
+                                    timestamp: Date.now()
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // Paiement consolidé depuis compte perso
+                var stockChargesTotal = arrondir2(stockTvaTotal + stockTaxeTotal + stockMensTotal);
+                if (stockChargesTotal > 0) {
+                    var caisseSt = COMPTABILITE.caisseJoueurs[myPlayerId];
+                    caisseSt.euro = arrondir2((caisseSt.euro || 0) - stockChargesTotal);
+                    
+                    if (stockTvaTotal > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'TVA nette stock → État',
+                            compteDebit: 635, compteCredit: 500,
+                            montantEuro: stockTvaTotal,
+                            contexte: 'stock_tva_ligne1'
+                        });
+                        sendSystemMessage('🏛️ ' + myName + ' : TVA nette stock → -' + fmt(stockTvaTotal) + '€');
+                    } else if (stockTvaTotal < 0) {
+                        var tvaRemb = arrondir2(Math.abs(stockTvaTotal));
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Remboursement TVA stock',
+                            compteDebit: 500, compteCredit: 411,
+                            montantEuro: tvaRemb,
+                            contexte: 'stock_tva_remboursement_ligne1'
+                        });
+                        sendSystemMessage('🏛️ ' + myName + ' : remboursement TVA stock → +' + fmt(tvaRemb) + '€');
+                    }
+                    if (stockTaxeTotal > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Taxe 20% revenus stock',
+                            compteDebit: 640, compteCredit: 500,
+                            montantEuro: stockTaxeTotal,
+                            contexte: 'stock_taxe_ligne1'
+                        });
+                        sendSystemMessage('🏛️ ' + myName + ' : taxe revenus stock → -' + fmt(stockTaxeTotal) + '€');
+                    }
+                    if (stockMensTotal > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Mensualités emprunts stock',
+                            compteDebit: 164, compteCredit: 500,
+                            montantEuro: stockMensTotal,
+                            contexte: 'stock_mens_ligne1'
+                        });
+                        sendSystemMessage('🏦 ' + myName + ' : mensualités stock → -' + fmt(stockMensTotal) + '€');
+                    }
+                }
+            }
+            
             // LOG EVENT: PAY_SALARY
             logEvent('PAY_SALARY', myPlayerId, {
                 salaire,
@@ -9364,7 +10228,12 @@ function initSystemeDe() {
                 if (!owner) {
                     showBuyModal(c, currentEuro);
                 } else if (owner !== myPlayerId) {
-                    showPayOrNegotiateModal(c, owner, currentEuro);
+                    // ═══ MODULE STOCKS : vente basée sur le stock ═══
+                    if (isStockActif() && c.stock) {
+                        await handleStockLanding(c, position, owner, currentEuro);
+                    } else {
+                        showPayOrNegotiateModal(c, owner, currentEuro);
+                    }
                 } else {
                     // Ma propriété - équipement ?
                     const act = COMPTABILITE.caisseActivites?.[position] || {};
@@ -10895,9 +11764,24 @@ function initSystemeDe() {
                     // Peut rembourser intégralement
                     caisse.euro -= dette.montant;
                     
-                    // Créditer le créancier
+                    // Créditer le créancier (perso ou caisse activité si stock)
                     initCaisseJoueur(dette.createurId);
-                    COMPTABILITE.caisseJoueurs[dette.createurId].euro += dette.montant;
+                    if (dette.isStock && dette.caseId !== undefined) {
+                        // Stock : remboursement → caisse activité
+                        initCaisseActivite(dette.caseId);
+                        var actRemb = COMPTABILITE.caisseActivites[dette.caseId];
+                        actRemb.stockCaisseE = arrondir2((actRemb.stockCaisseE || 0) + dette.montant);
+                        actRemb.stockJournal.push({
+                            op: 'REMB_REPORT', tour: gameState.toursComplets || 0,
+                            debit: { compte: 500, nom: 'Caisse activité', euro: dette.montant, hash: 0 },
+                            credit: { compte: 416, nom: 'Créance client soldée', euro: dette.montant, hash: 0 },
+                            details: { debiteurId: joueurId },
+                            timestamp: Date.now()
+                        });
+                    } else {
+                        // Classique : remboursement → compte perso propriétaire
+                        COMPTABILITE.caisseJoueurs[dette.createurId].euro += dette.montant;
+                    }
                     
                     // Écriture comptable débiteur: paie sa dette fournisseur
                     enregistrerEcriture({
@@ -12756,6 +13640,10 @@ function initSystemeDe() {
             }
             nextTurnInProgress = true;
             
+            // ═══ MODULE STOCKS : reset pour le prochain tour ═══
+            stockGestionDone = false;
+            stockDashboardOpen = false;
+            
             // Timeout de sécurité - reset après 10 secondes si bloqué
             const safetyTimeout = setTimeout(() => {
                 console.warn('⚠️ nextTurn timeout - reset forcé');
@@ -13359,6 +14247,11 @@ function initSystemeDe() {
             }
             const profil = PROFILS_IA[bot.botProfil] || PROFILS_IA.EQUILIBRE;
             
+            // ═══ MODULE STOCKS — Gestion automatique bot ═══
+            if (isStockActif()) {
+                await botGestionStock(bot, profil);
+            }
+            
             // Vérifier/définir le sens du bot
             const sensSnap = await gameRef.child(`sensJoueurs/${bot.id}`).once('value');
             let sens = sensSnap.val();
@@ -13814,6 +14707,156 @@ function initSystemeDe() {
                         }
                     }
                 } else if (owner && owner !== botId) {
+                    // ═══ MODULE STOCKS — Bot achète via stock ═══
+                    if (isStockActif() && CASES[position]?.stock) {
+                        var sAct = COMPTABILITE.caisseActivites[position];
+                        if (sAct) {
+                            initCaisseActivite(position);
+                            var sEff = getStockEffectif(position);
+                            var sStockCout = arrondir2(sAct.stockCout || 0);
+                            var sCapVente = arrondir2(sStockCout * sEff.margeEffective);
+                            
+                            if (sCapVente < 1) {
+                                sendSystemMessage('❌ ' + bot.name + ' chez ' + CASES[position].icon + ' ' + CASES[position].name + ' — RUPTURE DE STOCK');
+                            } else {
+                                var sMontant = Math.min(sEff.prixPassage, sCapVente);
+                                var sCoutVendu = arrondir2(sMontant / sEff.margeEffective);
+                                var sTvaPct = sEff.tvaPct;
+                                var sTva = arrondir2(sMontant * sTvaPct / (1 + sTvaPct));
+                                var sHt = arrondir2(sMontant - sTva);
+                                
+                                var sBotEuro = arrondir2(caisse.euro || 0);
+                                var sBotHash = arrondirHash(caisse.espoyr || 0);
+                                var sPhase = gameState?.phase || 1;
+                                var sMontantEuro = sMontant;
+                                var sMontantHash = 0;
+                                
+                                // Phase 2+ : payer en mix €/# si local et bot a des #
+                                if (sPhase >= 2 && sEff.local && sBotHash > 0) {
+                                    sMontantHash = arrondirHash(Math.min(sBotHash, sMontant * 0.5));
+                                    sMontantEuro = arrondir2(sMontant - sMontantHash);
+                                }
+                                
+                                // Décision : payer cash, découvert ou report ?
+                                var sNbReports = (COMPTABILITE.dettesEntreJoueurs || []).filter(function(d) { return d.debiteurId === botId; }).length;
+                                var sCanReport = sNbReports < 3;
+                                var sNeedCredit = sBotEuro < sMontantEuro;
+                                var sUseReport = false;
+                                
+                                if (sNeedCredit && sCanReport) {
+                                    // Choix selon profil
+                                    var sProfilId = profil.id || 'EQUILIBRE';
+                                    if (sProfilId === 'PREDATEUR' || sProfilId === 'INVESTISSEUR') {
+                                        sUseReport = false; // Découvert
+                                    } else if (sProfilId === 'PRUDENT' || sProfilId === 'COOPERATIF' || sProfilId === 'SOLIDAIRE') {
+                                        sUseReport = true; // Report
+                                    } else {
+                                        sUseReport = sNbReports < 2; // Équilibré: report si < 2
+                                    }
+                                }
+                                
+                                if (sUseReport) {
+                                    // ═══ REPORT : stock sort, dette créée, pas de cash ═══
+                                    sAct.stockCout = arrondir2(Math.max(0, sStockCout - sCoutVendu));
+                                    sAct.stockTvaCollectee = arrondir2((sAct.stockTvaCollectee || 0) + sTva);
+                                    sAct.stockVentesHT = arrondir2((sAct.stockVentesHT || 0) + sHt);
+                                    
+                                    if (!COMPTABILITE.dettesEntreJoueurs) COMPTABILITE.dettesEntreJoueurs = [];
+                                    COMPTABILITE.dettesEntreJoueurs.push({
+                                        debiteurId: botId, createurId: owner, montant: sMontant,
+                                        caseId: position, caseName: CASES[position].name,
+                                        isStock: true, tour: gameState?.toursComplets || 0, timestamp: Date.now()
+                                    });
+                                    
+                                    enregistrerEcriture({
+                                        joueurId: botId,
+                                        libelle: 'Report stock ' + CASES[position].icon + ' → ' + (playersData[owner]?.name || owner),
+                                        compteDebit: 613, compteCredit: 401, montantEuro: sMontant,
+                                        contexte: 'reportPaiementStock',
+                                        details: { type: 'report', createurId: owner, caseId: position, isStock: true }
+                                    });
+                                    enregistrerEcriture({
+                                        joueurId: owner,
+                                        libelle: 'Créance stock ' + CASES[position].icon + ' de ' + bot.name,
+                                        compteDebit: 416, compteCredit: 700, montantEuro: sMontant,
+                                        contexte: 'reportPaiementStock',
+                                        details: { type: 'report', debiteurId: botId, caseId: position, isStock: true }
+                                    });
+                                    sAct.stockJournal.push({
+                                        op: 'VENTE_REPORT', tour: gameState.toursComplets || 0,
+                                        debit: { compte: 416, nom: 'Créance client', euro: sMontant, hash: 0 },
+                                        credit: { compte: 707, nom: 'Ventes marchandises', euro: sMontant, hash: 0 },
+                                        details: { ttc: sMontant, ht: sHt, tva: sTva, debiteurId: botId },
+                                        timestamp: Date.now()
+                                    });
+                                    sAct.stockJournal.push({
+                                        op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
+                                        debit: { compte: 607, nom: 'Achats marchandises', euro: sCoutVendu, hash: 0 },
+                                        credit: { compte: 301, nom: 'Stock marchandises', euro: sCoutVendu, hash: 0 },
+                                        timestamp: Date.now()
+                                    });
+                                    if (typeof ajouterPIB === 'function') ajouterPIB(sHt);
+                                    sendSystemMessage('📜 ' + bot.name + ' → report ' + CASES[position].icon + ': ' + fmt(sMontant) + '€ (dette ' + (sNbReports+1) + '/3)');
+                                } else {
+                                    // ═══ PAIEMENT CASH / DÉCOUVERT ═══
+                                caisse.euro = arrondir2(sBotEuro - sMontantEuro);
+                                if (sMontantHash > 0) {
+                                    caisse.espoyr = arrondirHash(sBotHash - sMontantHash);
+                                }
+                                sAct.stockCout = arrondir2(Math.max(0, sStockCout - sCoutVendu));
+                                sAct.stockCaisseE = arrondir2((sAct.stockCaisseE || 0) + sMontantEuro);
+                                if (sMontantHash > 0) {
+                                    sAct.stockCaisseH = arrondirHash((sAct.stockCaisseH || 0) + sMontantHash);
+                                }
+                                sAct.stockTvaCollectee = arrondir2((sAct.stockTvaCollectee || 0) + sTva);
+                                sAct.stockVentesHT = arrondir2((sAct.stockVentesHT || 0) + sHt);
+                                
+                                // Écriture client
+                                if (sMontantEuro > 0) {
+                                    enregistrerEcriture({
+                                        joueurId: botId,
+                                        libelle: 'Achat stock ' + CASES[position].icon + ' ' + CASES[position].name,
+                                        compteDebit: 613, compteCredit: 500,
+                                        montantEuro: sMontantEuro,
+                                        activiteId: position,
+                                        contexte: 'stock_achat_bot'
+                                    });
+                                }
+                                if (sMontantHash > 0) {
+                                    enregistrerEcriture({
+                                        joueurId: botId,
+                                        libelle: 'Achat stock # ' + CASES[position].icon,
+                                        compteDebit: 613, compteCredit: 501,
+                                        montantEspoyr: sMontantHash,
+                                        activiteId: position,
+                                        contexte: 'stock_achat_bot_hash'
+                                    });
+                                }
+                                
+                                // Écriture activité
+                                sAct.stockJournal.push({
+                                    op: 'VENTE', tour: gameState.toursComplets || 0,
+                                    debit: { compte: 500, nom: 'Caisse activité', euro: sMontantEuro, hash: sMontantHash },
+                                    credit: { compte: 707, nom: 'Ventes marchandises', euro: sMontantEuro, hash: sMontantHash },
+                                    details: { ttc: sMontant, ht: sHt, tva: sTva },
+                                    client: botId, timestamp: Date.now()
+                                });
+                                sAct.stockJournal.push({
+                                    op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
+                                    debit: { compte: 607, nom: 'Achats marchandises', euro: sCoutVendu, hash: 0 },
+                                    credit: { compte: 301, nom: 'Stock marchandises', euro: sCoutVendu, hash: 0 },
+                                    timestamp: Date.now()
+                                });
+                                if (typeof ajouterPIB === 'function') ajouterPIB(sHt);
+                                
+                                var sHashStr = sMontantHash > 0 ? ' (' + fmt(sMontantEuro) + '€+' + fmt(sMontantHash) + '#)' : '';
+                                var sDecouvert = caisse.euro < 0 ? ' ⚠️ découvert!' : '';
+                                sendSystemMessage('✅ ' + bot.name + ' achète chez ' + CASES[position].icon + ': ' + fmt(sMontant) + '€' + sHashStr + sDecouvert);
+                                } // fin paiement cash/découvert
+                            }
+                        }
+                    } else {
+                    // ═══ Paiement classique (sans stocks) ═══
                     const equipTypesSnap = await gameRef.child(`equipementTypes/${position}`).once('value');
                     const equipTypesList = equipTypesSnap.val() || [];
                     const facture = calculerFactureActivite(position, equipTypesList);
@@ -13932,6 +14975,7 @@ function initSystemeDe() {
                         });
                     }
                     await syncComptabiliteToFirebase();
+                    } // fin paiement classique sans stocks
                 }
             } else if (c.type === 'frais' || c.type === 'ligne2') {
                 // ═══ Frais indexés à l'inflation ═══
@@ -16531,20 +17575,32 @@ function initSystemeDe() {
             valeurEquipements += getPrixB(caseId) * nbBInfo;
             const resultat = (caisseAct.recettes || 0) - (caisseAct.depenses || 0);
             
+            // ═══ STOCK données pour le bilan ═══
+            const hasStock = isStockActif() && c.stock;
+            const sStockCout = hasStock ? arrondir2(caisseAct.stockCout || 0) : 0;
+            const sCaisseE = hasStock ? arrondir2(caisseAct.stockCaisseE || 0) : 0;
+            const sCaisseH = hasStock ? arrondirHash(caisseAct.stockCaisseH || 0) : 0;
+            const sTvaRecup = hasStock ? arrondir2((caisseAct.stockTvaDeductible || 0)) : 0;
+            const sDetteStock = hasStock ? arrondir2((caisseAct.stockEmprunts || []).reduce(function(s,e){return s+(e.restant||0);}, 0)) : 0;
+            
             const bilan = {
                 actif: {
                     immobilisation: c.prix || 0,
                     equipements: valeurEquipements,
-                    tresorerie: resultat  // Trésorerie = Résultat
+                    stock: sStockCout,
+                    caisseActivite: sCaisseE,
+                    tvaRecuperable: sTvaRecup,
+                    tresorerie: resultat
                 },
                 passif: {
                     capitalInitial: c.prix || 0,
-                    apportsEquipements: valeurEquipements,  // Apports en capital pour équipements
-                    resultat: resultat
+                    apportsEquipements: valeurEquipements,
+                    empruntStock: sDetteStock,
+                    resultat: resultat + sCaisseE + sStockCout + sTvaRecup - sDetteStock
                 }
             };
-            bilan.actif.total = bilan.actif.immobilisation + bilan.actif.equipements + bilan.actif.tresorerie;
-            bilan.passif.total = bilan.passif.capitalInitial + bilan.passif.apportsEquipements + bilan.passif.resultat;
+            bilan.actif.total = bilan.actif.immobilisation + bilan.actif.equipements + bilan.actif.stock + bilan.actif.caisseActivite + bilan.actif.tvaRecuperable + bilan.actif.tresorerie;
+            bilan.passif.total = bilan.passif.capitalInitial + bilan.passif.apportsEquipements + bilan.passif.empruntStock + bilan.passif.resultat;
             
             // Vérification équilibre
             const equilibre = Math.abs(bilan.actif.total - bilan.passif.total) < 1;
@@ -16576,6 +17632,15 @@ function initSystemeDe() {
                                     <div style="display: flex; justify-content: space-between; padding: 2px 0;">
                                         <span>Équipements</span><span>${fmt(bilan.actif.equipements)}€</span>
                                     </div>
+                                    ${hasStock && bilan.actif.stock > 0 ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;">
+                                        <span>📦 Stock</span><span style="color:#2563eb;">${fmt(bilan.actif.stock)}€</span>
+                                    </div>` : ''}
+                                    ${hasStock && bilan.actif.caisseActivite > 0 ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;">
+                                        <span>Caisse act.</span><span style="color:#059669;">${fmt(bilan.actif.caisseActivite)}€</span>
+                                    </div>` : ''}
+                                    ${hasStock && bilan.actif.tvaRecuperable > 0 ? `<div style="display: flex; justify-content: space-between; padding: 2px 0;">
+                                        <span>TVA récup.</span><span>${fmt(bilan.actif.tvaRecuperable)}€</span>
+                                    </div>` : ''}
                                     <div style="display: flex; justify-content: space-between; padding: 2px 0;">
                                         <span>Trésorerie</span><span style="color: ${bilan.actif.tresorerie >= 0 ? '#059669' : '#dc2626'};">${fmt(bilan.actif.tresorerie)}€</span>
                                     </div>
@@ -16595,7 +17660,12 @@ function initSystemeDe() {
                                     <div style="display: flex; justify-content: space-between; padding: 2px 0;">
                                         <span>Apports équip.</span><span>${fmt(bilan.passif.apportsEquipements)}€</span>
                                     </div>
-                                    ` : `<div style="padding: 2px 0;">&nbsp;</div>`}
+                                    ` : ''}
+                                    ${hasStock && bilan.passif.empruntStock > 0 ? `
+                                    <div style="display: flex; justify-content: space-between; padding: 2px 0;">
+                                        <span>🏦 Emprunts stock</span><span style="color:#dc2626;">${fmt(bilan.passif.empruntStock)}€</span>
+                                    </div>
+                                    ` : ''}
                                     <div style="display: flex; justify-content: space-between; padding: 2px 0;">
                                         <span>Résultat</span><span style="color: ${bilan.passif.resultat >= 0 ? '#059669' : '#dc2626'};">${fmt(bilan.passif.resultat)}€</span>
                                     </div>
@@ -16607,6 +17677,24 @@ function initSystemeDe() {
                         </div>
                     </div>
                 </div>
+                
+                ${isStockActif() && c.stock ? (function() {
+                    var sAct = COMPTABILITE.caisseActivites[caseId] || {};
+                    var sEff = getStockEffectif(caseId);
+                    var sStockCout = arrondir2(sAct.stockCout || 0);
+                    var sCapVente = sEff ? arrondir2(sStockCout * sEff.margeEffective) : 0;
+                    var sNbClients = sEff ? Math.floor(sCapVente / sEff.prixPassage) : 0;
+                    var sAlerte = sEff && sCapVente < sEff.prixPassage;
+                    return '<div style="margin:10px 0;padding:10px;background:' + (sAlerte ? '#fef2f2;border:2px solid #ef4444' : '#eff6ff;border:1px solid #93c5fd') + ';border-radius:8px;">' +
+                        '<p style="font-weight:bold;margin:0 0 6px;">📦 Stocks — Info opérationnelle</p>' +
+                        '<div style="font-size:0.85rem;">' +
+                        '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Capacité vente:</span><b style="color:' + (sAlerte ? '#ef4444' : '#059669') + ';">' + fmt(sCapVente) + '€ (' + sNbClients + ' client' + (sNbClients > 1 ? 's' : '') + ')</b></div>' +
+                        (sEff ? '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Prix passage:</span><span>' + fmt(sEff.prixPassage) + '€ TTC (TVA ' + Math.round(sEff.tvaPct*100) + '%)</span></div>' : '') +
+                        (sEff ? '<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Coût unitaire:</span><span>' + fmt(sEff.coutUnit) + '€ | Marge ×' + sEff.margeEffective + '</span></div>' : '') +
+                        '</div>' +
+                        (sStockCout <= 0 ? '<p style="margin:6px 0 0;color:#ef4444;font-weight:bold;">🔺 RUPTURE — Aucun stock disponible !</p>' : '') +
+                        '</div>';
+                })() : ''}
                 
                 <!-- Propriétaire -->
                 <div style="margin: 10px 0; padding: 8px; background: ${ownerPlayer ? '#dcfce7' : '#fef3c7'}; border-radius: 6px;">
