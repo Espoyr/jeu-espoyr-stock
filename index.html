@@ -1834,6 +1834,7 @@
 
         // ═══ PROPOSITION EMPRUNT avant dé ═══
         let empruntProposeDone = false; // true quand le modal emprunt a été vu/fermé ce tour
+        let empruntProposeTurnKey = ''; // 'tour_playerIdx' — détecte automatiquement le changement de tour
 
         // ═══ ÉTAT MODULE COURSES ═══
         let coursesGestionDone = false;   // true quand le joueur a validé la liste ce tour
@@ -8990,12 +8991,21 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                         // Ouvrir le dashboard automatiquement (délai pour éviter conflit modal)
                         stockDashboardOpen = true;
                         setTimeout(function() { showStockDashboard(); }, 500);
+                    } else if (mesActivites.length === 0) {
+                        // Pas d'activité → skip silencieux, libérer le flux
+                        stockGestionDone = true;
                     }
                 }
 
                 // ═══ PROPOSITION EMPRUNT : après courses+stocks, avant dé ═══
                 var stocksOK = !isStockActif() || stockGestionDone;
                 var coursesOK = !isCoursesActif() || coursesGestionDone;
+                // Auto-reset si le tour a changé (fonctionne sur tous les clients sans nextTurn)
+                var empruntTurnKey = (gameState.turn || 0) + '_' + currentIdx;
+                if (empruntProposeTurnKey !== empruntTurnKey) {
+                    empruntProposeDone = false;
+                    empruntProposeTurnKey = empruntTurnKey;
+                }
                 if (isMyTurn && !isBot && stocksOK && coursesOK && !empruntProposeDone && !turnActionInProgress) {
                     var caisseProp = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
                     var masseProp = Object.values(COMPTABILITE.caisseJoueurs).reduce(function(s,c){return s+(c.euro||0);}, 0) || (getOrderedPlayers().length * CONFIG.capitalInitial);
