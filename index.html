@@ -4151,9 +4151,13 @@ function isAbsent(player) {
             closeModal();
             stockGestionDone = true;
             stockDashboardOpen = false;
-            // Réactiver le dé
-            var diceBtn = document.getElementById('rollDiceBtn');
-            if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+            // Si courses aussi terminées → proposer emprunt, sinon activer le dé directement
+            if (!isCoursesActif() || coursesGestionDone) {
+                proposerEmpruntAvantDe();
+            } else {
+                var diceBtn = document.getElementById('rollDiceBtn');
+                if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -4330,8 +4334,13 @@ function isAbsent(player) {
             closeModal();
             coursesGestionDone = true;
             coursesDashboardOpen = false;
-            var diceBtn = document.getElementById('rollDiceBtn');
-            if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+            // Si stocks aussi terminés → proposer emprunt, sinon activer le dé directement
+            if (!isStockActif() || stockGestionDone) {
+                proposerEmpruntAvantDe();
+            } else {
+                var diceBtn = document.getElementById('rollDiceBtn');
+                if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+            }
         }
 
         async function acheterCourse(caseId) {
@@ -4476,8 +4485,8 @@ function isAbsent(player) {
             html += '<div style="border-top:1px solid #e5e7eb;padding-top:8px;margin-bottom:10px;">';
             html += '<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">Besoin de fonds ?</div>';
             html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
-            html += '<button class="btn" style="background:#22c55e;font-size:0.8rem;padding:8px;" onclick="stockInvestir(' + actId + ')">INVESTIR €</button>';
-            html += '<button class="btn" style="background:#ef4444;font-size:0.8rem;padding:8px;" onclick="stockEmprunter(' + actId + ')">EMPRUNTER</button>';
+            html += '<button class="btn" style="background:#22c55e;font-size:0.8rem;padding:8px;" onclick="stockInvestir(' + actId + ')">💰 Investir €</button>';
+            html += '<button class="btn" style="background:#ef4444;font-size:0.8rem;padding:8px;" onclick="stockEmprunter(' + actId + ')">🏦 Emprunt activité</button>';
             html += '</div></div>';
             
             var btns = '<button class="btn btn-primary" onclick="validerStockAppro(' + actId + ')">✅ Approvisionner</button>';
@@ -4805,23 +4814,38 @@ function isAbsent(player) {
             }
             
             // 6. DOUBLE ÉCRITURE — Côté activité (vente + sortie stock)
-            // Écriture 1 : Encaissement vente (TTC = TTC, TVA tracée séparément dans stockTvaCollectee)
-            var totalEncaisse = arrondir2(montantEuro + montantHash);
-            act.stockJournal.push({
-                op: 'VENTE', tour: gameState.toursComplets || 0,
-                debit: { compte: 500, nom: 'Caisse activité', euro: montantEuro, hash: montantHash },
-                credit: { compte: 707, nom: 'Ventes marchandises', euro: montantEuro, hash: montantHash },
-                details: { ttc: totalEncaisse, ht: ht, tva: tva },
-                client: myPlayerId,
-                timestamp: Date.now()
-            });
-            // Écriture 2 : Sortie de stock (coût des marchandises vendues)
-            act.stockJournal.push({
-                op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
-                debit: { compte: 607, nom: 'Achats marchandises', euro: coutVendu, hash: 0 },
-                credit: { compte: 301, nom: 'Stock marchandises', euro: coutVendu, hash: 0 },
-                timestamp: Date.now()
-            });
+            // Écriture 1 : Encaissement vente TTC → caisse activité
+            if (montantEuro > 0) {
+                enregistrerEcriture({
+                    joueurId: ownerId,
+                    libelle: 'Vente stock ' + c.icon + ' ' + c.name + ' TTC (' + fmt(ht) + '€ HT + ' + fmt(tva) + '€ TVA)',
+                    compteDebit: 500, compteCredit: 707,
+                    montantEuro: montantEuro,
+                    activiteId: actId,
+                    contexte: 'stock_vente'
+                });
+            }
+            if (montantHash > 0) {
+                enregistrerEcriture({
+                    joueurId: ownerId,
+                    libelle: 'Vente stock # ' + c.icon + ' ' + c.name,
+                    compteDebit: 501, compteCredit: 707,
+                    montantEspoyr: montantHash,
+                    activiteId: actId,
+                    contexte: 'stock_vente_hash'
+                });
+            }
+            // Écriture 2 : Sortie de stock au coût (coût des marchandises vendues)
+            if (coutVendu > 0) {
+                enregistrerEcriture({
+                    joueurId: ownerId,
+                    libelle: 'CMV ' + c.icon + ' ' + c.name + ' (' + fmt(coutVendu) + '€ coût)',
+                    compteDebit: 607, compteCredit: 301,
+                    montantEuro: coutVendu,
+                    activiteId: actId,
+                    contexte: 'stock_cmv'
+                });
+            }
             
             // 7. PIB
             if (typeof ajouterPIB === 'function') ajouterPIB(ht);
@@ -4887,20 +4911,17 @@ function isAbsent(player) {
                 details: { type: 'report', debiteurId: myPlayerId, caseId: actId, isStock: true }
             });
             
-            // 6. Journal activité — vente + sortie stock
-            act.stockJournal.push({
-                op: 'VENTE_REPORT', tour: gameState.toursComplets || 0,
-                debit: { compte: 416, nom: 'Créance client', euro: montant, hash: 0 },
-                credit: { compte: 707, nom: 'Ventes marchandises', euro: montant, hash: 0 },
-                details: { ttc: montant, ht: ht, tva: tva, debiteurId: myPlayerId },
-                timestamp: Date.now()
-            });
-            act.stockJournal.push({
-                op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
-                debit: { compte: 607, nom: 'Achats marchandises', euro: coutVendu, hash: 0 },
-                credit: { compte: 301, nom: 'Stock marchandises', euro: coutVendu, hash: 0 },
-                timestamp: Date.now()
-            });
+            // 6. DOUBLE ÉCRITURE — Sortie de stock au coût (coût des marchandises vendues)
+            if (coutVendu > 0) {
+                enregistrerEcriture({
+                    joueurId: ownerId,
+                    libelle: 'CMV report ' + c.icon + ' ' + c.name + ' (' + fmt(coutVendu) + '€ coût)',
+                    compteDebit: 607, compteCredit: 301,
+                    montantEuro: coutVendu,
+                    activiteId: actId,
+                    contexte: 'stock_cmv_report'
+                });
+            }
             
             // 7. PIB
             if (typeof ajouterPIB === 'function') ajouterPIB(ht);
@@ -4960,11 +4981,13 @@ function isAbsent(player) {
                         COMPTABILITE.caisseJoueurs[bot.id].euro = arrondir2(caissePerso - aCapitaliser);
                         act.stockCaisseE = arrondir2(caisseE + aCapitaliser);
                         caisseE = act.stockCaisseE;
-                        act.stockJournal.push({
-                            op: 'INVEST_E', tour: gameState.toursComplets || 0,
-                            debit: { compte: 500, nom: 'Caisse activité', euro: aCapitaliser, hash: 0 },
-                            credit: { compte: 100, nom: 'Capital propriétaire', euro: aCapitaliser, hash: 0 },
-                            timestamp: Date.now()
+                        enregistrerEcriture({
+                            joueurId: bot.id,
+                            libelle: 'Capitalisation stock ' + c.icon + ' ' + c.name,
+                            compteDebit: 260, compteCredit: 500,
+                            montantEuro: aCapitaliser,
+                            activiteId: actId,
+                            contexte: 'stock_capitalisation'
                         });
                         sendSystemMessage('🤖 ' + bot.name + ' investit ' + fmt(aCapitaliser) + '€ dans ' + c.icon);
                     }
@@ -4983,12 +5006,14 @@ function isAbsent(player) {
                         });
                         act.stockCaisseE = arrondir2(act.stockCaisseE + aEmprunter);
                         caisseE = act.stockCaisseE;
-                        act.stockJournal.push({
-                            op: 'EMPRUNT', tour: gameState.toursComplets || 0,
-                            debit: { compte: 500, nom: 'Caisse activité', euro: aEmprunter, hash: 0 },
-                            credit: { compte: 164, nom: 'Emprunt bancaire', euro: aEmprunter, hash: 0 },
-                            details: { interet: interet, total: total, mensualite: mensualite },
-                            timestamp: Date.now()
+                        enregistrerEcriture({
+                            joueurId: bot.id,
+                            libelle: 'Emprunt stock ' + c.icon + ' ' + c.name,
+                            compteDebit: 260, compteCredit: 164,
+                            montantEuro: aEmprunter,
+                            activiteId: actId,
+                            contexte: 'stock_emprunt',
+                            details: { interet: interet, total: total, mensualite: mensualite }
                         });
                         sendSystemMessage('🤖🏦 ' + bot.name + ' emprunte ' + fmt(aEmprunter) + '€ pour ' + c.icon);
                     }
@@ -5004,12 +5029,14 @@ function isAbsent(player) {
                     var tvaDeduct = arrondir2(aAppro * eff.tvaPct / (1 + eff.tvaPct));
                     act.stockTvaDeductible = arrondir2((act.stockTvaDeductible || 0) + tvaDeduct);
                     
-                    act.stockJournal.push({
-                        op: 'APPRO', tour: gameState.toursComplets || 0,
-                        debit: { compte: 301, nom: 'Stock marchandises', euro: aAppro, hash: 0 },
-                        credit: { compte: 500, nom: 'Caisse activité', euro: aAppro, hash: 0 },
-                        details: { tvaDeductible: tvaDeduct, tvaPct: eff.tvaPct },
-                        timestamp: Date.now()
+                    enregistrerEcriture({
+                        joueurId: bot.id,
+                        libelle: 'Appro. stock ' + c.icon + ' ' + c.name,
+                        compteDebit: 301, compteCredit: 260,
+                        montantEuro: aAppro,
+                        activiteId: actId,
+                        contexte: 'stock_appro',
+                        details: { tvaDeductible: tvaDeduct, tvaPct: eff.tvaPct }
                     });
                     
                     var newCapVente = arrondir2(act.stockCout * eff.margeEffective);
@@ -8998,27 +9025,19 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 }
 
                 // ═══ PROPOSITION EMPRUNT : après courses+stocks, avant dé ═══
-                var stocksOK = !isStockActif() || stockGestionDone;
-                var coursesOK = !isCoursesActif() || coursesGestionDone;
-                // Auto-reset si le tour a changé (fonctionne sur tous les clients sans nextTurn)
+                // Auto-reset si le tour a changé (fonctionne sur tous les clients)
                 var empruntTurnKey = (gameState.turn || 0) + '_' + currentIdx;
                 if (empruntProposeTurnKey !== empruntTurnKey) {
                     empruntProposeDone = false;
                     empruntProposeTurnKey = empruntTurnKey;
                 }
-                if (isMyTurn && !isBot && stocksOK && coursesOK && !empruntProposeDone && !turnActionInProgress) {
-                    var caisseProp = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
-                    var masseProp = Object.values(COMPTABILITE.caisseJoueurs).reduce(function(s,c){return s+(c.euro||0);}, 0) || (getOrderedPlayers().length * CONFIG.capitalInitial);
-                    var limiteProp = Math.max(CONFIG.limiteEmpruntMin, Math.floor(masseProp / Math.max(1, getOrderedPlayers().length)));
-                    var empruntActuelProp = caisseProp.emprunt || 0;
-                    var capaciteProp = Math.max(0, limiteProp - empruntActuelProp);
-                    if (capaciteProp > 0) {
-                        diceBtn.disabled = true;
-                        diceBtn.style.opacity = '0.5';
-                        empruntProposeDone = true;
-                        setTimeout(function() { showEmpruntProposalModal(); }, 200);
-                    } else {
-                        empruntProposeDone = true;
+                // Appel uniquement si les deux modules sont inactifs ou déjà terminés
+                // (sinon c'est closeStockDashboard/closeCoursesDashboard qui prend le relais)
+                if (isMyTurn && !isBot && !empruntProposeDone && !turnActionInProgress) {
+                    var stocksOKL = !isStockActif() || stockGestionDone;
+                    var coursesOKL = !isCoursesActif() || coursesGestionDone;
+                    if (stocksOKL && coursesOKL) {
+                        proposerEmpruntAvantDe();
                     }
                 }
 
@@ -10779,6 +10798,20 @@ function initSystemeDe() {
             }
         }
         
+        // Approvisionner depuis le modal post-achat (retrouve la dernière activité achetée)
+        function showStockApproFromBuy() {
+            var mesActivites = Object.entries(COMPTABILITE.caisseActivites || {})
+                .filter(function(e) { return e[1].proprietaireId === myPlayerId; });
+            if (mesActivites.length === 0) return;
+            // Prendre la dernière achetée (la plus récente dans le journal)
+            var lastActId = parseInt(mesActivites[mesActivites.length - 1][0]);
+            var c = CASES[lastActId];
+            if (c && c.stock) {
+                initCaisseActivite(lastActId);
+                showStockAppro(lastActId);
+            }
+        }
+
         // Modal pour équiper immédiatement après achat
         function showEquipAfterBuyModal(c, currentEuro, profil) {
             const phase = gameState?.phase || 1;
@@ -10834,6 +10867,7 @@ function initSystemeDe() {
                 
                 ${buttonsHtml}
             `, `
+                ${isStockActif() && c.stock ? `<button class="btn" style="background:#d97706;color:white;" onclick="closeModal(); showStockAppro(${c.id});">📦 Approvisionner</button>` : ''}
                 <button class="btn" style="background:#fef3c7;color:#b45309;" onclick="closeModal(); showQuickEmprunter();">💰 Emprunter</button>
                 <button class="btn btn-primary" onclick="safeNextTurn();">Suivant ➡️</button>
             `);
@@ -10866,10 +10900,10 @@ function initSystemeDe() {
                         <li>Anticiper les impacts environnementaux</li>
                     </ul>
                 `, `
+                    ${isStockActif() ? `<button class="btn" style="background:#d97706;color:white;" onclick="closeModal(); showStockApproFromBuy();">📦 Approvisionner</button>` : ''}
                     <button class="btn" style="background:#fef3c7;color:#b45309;" onclick="closeModal(); showQuickEmprunter();">💰 Emprunter</button>
                     <button class="btn btn-primary" onclick="safeNextTurn();">Suivant ➡️</button>
                 `);
-            } else {
                 showModal(`
                     <div id="modalTimer" style="text-align: center; margin-bottom: 10px;"></div>
                     <h3>🏛️ Bienvenue dans l'équipe !</h3>
@@ -10888,6 +10922,7 @@ function initSystemeDe() {
                         <li>Préserver l'avenir collectif</li>
                     </ul>
                 `, `
+                    ${isStockActif() ? `<button class="btn" style="background:#d97706;color:white;" onclick="closeModal(); showStockApproFromBuy();">📦 Approvisionner</button>` : ''}
                     <button class="btn" style="background:#fef3c7;color:#b45309;" onclick="closeModal(); showQuickEmprunter();">💰 Emprunter</button>
                     <button class="btn btn-primary" onclick="safeNextTurn();">Suivant ➡️</button>
                 `);
@@ -15186,19 +15221,16 @@ function initSystemeDe() {
                                         contexte: 'reportPaiementStock',
                                         details: { type: 'report', debiteurId: botId, caseId: position, isStock: true }
                                     });
-                                    sAct.stockJournal.push({
-                                        op: 'VENTE_REPORT', tour: gameState.toursComplets || 0,
-                                        debit: { compte: 416, nom: 'Créance client', euro: sMontant, hash: 0 },
-                                        credit: { compte: 707, nom: 'Ventes marchandises', euro: sMontant, hash: 0 },
-                                        details: { ttc: sMontant, ht: sHt, tva: sTva, debiteurId: botId },
-                                        timestamp: Date.now()
-                                    });
-                                    sAct.stockJournal.push({
-                                        op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
-                                        debit: { compte: 607, nom: 'Achats marchandises', euro: sCoutVendu, hash: 0 },
-                                        credit: { compte: 301, nom: 'Stock marchandises', euro: sCoutVendu, hash: 0 },
-                                        timestamp: Date.now()
-                                    });
+                                    if (sCoutVendu > 0) {
+                                        enregistrerEcriture({
+                                            joueurId: owner,
+                                            libelle: 'CMV report ' + CASES[position].icon + ' ' + CASES[position].name,
+                                            compteDebit: 607, compteCredit: 301,
+                                            montantEuro: sCoutVendu,
+                                            activiteId: position,
+                                            contexte: 'stock_cmv_report'
+                                        });
+                                    }
                                     if (typeof ajouterPIB === 'function') ajouterPIB(sHt);
                                     sendSystemMessage('📜 ' + bot.name + ' → report ' + CASES[position].icon + ': ' + fmt(sMontant) + '€ (dette ' + (sNbReports+1) + '/3)');
                                 } else {
@@ -15237,20 +15269,37 @@ function initSystemeDe() {
                                     });
                                 }
                                 
-                                // Écriture activité
-                                sAct.stockJournal.push({
-                                    op: 'VENTE', tour: gameState.toursComplets || 0,
-                                    debit: { compte: 500, nom: 'Caisse activité', euro: sMontantEuro, hash: sMontantHash },
-                                    credit: { compte: 707, nom: 'Ventes marchandises', euro: sMontantEuro, hash: sMontantHash },
-                                    details: { ttc: sMontant, ht: sHt, tva: sTva },
-                                    client: botId, timestamp: Date.now()
-                                });
-                                sAct.stockJournal.push({
-                                    op: 'COUT_VENTE', tour: gameState.toursComplets || 0,
-                                    debit: { compte: 607, nom: 'Achats marchandises', euro: sCoutVendu, hash: 0 },
-                                    credit: { compte: 301, nom: 'Stock marchandises', euro: sCoutVendu, hash: 0 },
-                                    timestamp: Date.now()
-                                });
+                                // Écriture activité (côté propriétaire)
+                                if (sMontantEuro > 0) {
+                                    enregistrerEcriture({
+                                        joueurId: owner,
+                                        libelle: 'Vente stock ' + CASES[position].icon + ' ' + CASES[position].name + ' TTC',
+                                        compteDebit: 500, compteCredit: 707,
+                                        montantEuro: sMontantEuro,
+                                        activiteId: position,
+                                        contexte: 'stock_vente'
+                                    });
+                                }
+                                if (sMontantHash > 0) {
+                                    enregistrerEcriture({
+                                        joueurId: owner,
+                                        libelle: 'Vente stock # ' + CASES[position].icon,
+                                        compteDebit: 501, compteCredit: 707,
+                                        montantEspoyr: sMontantHash,
+                                        activiteId: position,
+                                        contexte: 'stock_vente_hash'
+                                    });
+                                }
+                                if (sCoutVendu > 0) {
+                                    enregistrerEcriture({
+                                        joueurId: owner,
+                                        libelle: 'CMV ' + CASES[position].icon + ' ' + CASES[position].name,
+                                        compteDebit: 607, compteCredit: 301,
+                                        montantEuro: sCoutVendu,
+                                        activiteId: position,
+                                        contexte: 'stock_cmv'
+                                    });
+                                }
                                 if (typeof ajouterPIB === 'function') ajouterPIB(sHt);
                                 
                                 var sHashStr = sMontantHash > 0 ? ' (' + fmt(sMontantEuro) + '€+' + fmt(sMontantHash) + '#)' : '';
@@ -18654,6 +18703,24 @@ function initSystemeDe() {
         }
         
         // Action rapide : Emprunter
+        // ═══ PROPOSITION EMPRUNT avant dé — helper appelé depuis 3 endroits ═══
+        function proposerEmpruntAvantDe() {
+            if (empruntProposeDone) return;
+            var caisseProp = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
+            var players = getOrderedPlayers();
+            var masseProp = Object.values(COMPTABILITE.caisseJoueurs).reduce(function(s,c){return s+(c.euro||0);}, 0) || (players.length * CONFIG.capitalInitial);
+            var limiteProp = Math.max(CONFIG.limiteEmpruntMin, Math.floor(masseProp / Math.max(1, players.length)));
+            var empruntActuelProp = caisseProp.emprunt || 0;
+            var capaciteProp = Math.max(0, limiteProp - empruntActuelProp);
+            empruntProposeDone = true;
+            if (capaciteProp > 0) {
+                var diceBtn = document.getElementById('rollDiceBtn');
+                if (diceBtn) { diceBtn.disabled = true; diceBtn.style.opacity = '0.5'; }
+                setTimeout(function() { showEmpruntProposalModal(); }, 200);
+            }
+            // Si capacité = 0 : skip silencieux, dé déjà actif
+        }
+
         // ═══ PROPOSITION EMPRUNT avant dé — modal automatique ═══
         function showEmpruntProposalModal() {
             var caisse = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
