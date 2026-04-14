@@ -1832,6 +1832,9 @@
         let stockGestionDone = false;   // true quand le joueur a fermé le dashboard ce tour
         let stockDashboardOpen = false; // empêche les ouvertures multiples
 
+        // ═══ PROPOSITION EMPRUNT avant dé ═══
+        let empruntProposeDone = false; // true quand le modal emprunt a été vu/fermé ce tour
+
         // ═══ ÉTAT MODULE COURSES ═══
         let coursesGestionDone = false;   // true quand le joueur a validé la liste ce tour
         let coursesDashboardOpen = false; // empêche les ouvertures multiples
@@ -4513,14 +4516,38 @@ function isAbsent(player) {
             var tvaDeduct = arrondir2(montant * eff.tvaPct / (1 + eff.tvaPct));
             act.stockTvaDeductible = arrondir2((act.stockTvaDeductible || 0) + tvaDeduct);
             
-            // DOUBLE ÉCRITURE — Entrée stock / Sortie caisse + TVA déductible
-            act.stockJournal.push({
-                op: 'APPRO', tour: gameState.toursComplets || 0,
-                debit: { compte: 301, nom: 'Stock marchandises', euro: montant, hash: 0 },
-                credit: { compte: 500, nom: 'Caisse activité', euro: montant, hash: 0 },
-                details: { tvaDeductible: tvaDeduct, tvaPct: eff.tvaPct },
-                timestamp: Date.now()
+            // DOUBLE ÉCRITURE — Entrée stock / Sortie caisse activité + TVA déductible
+            enregistrerEcriture({
+                joueurId: myPlayerId,
+                libelle: 'Appro. stock ' + c.icon + ' ' + c.name + ' (' + montant + '€ coût → ' + capVente + '€ vente)',
+                compteDebit: 301,   // Stock marchandises (actif +)
+                compteCredit: 260,  // Immobilisations stocks (actif - : la caisse activité sort)
+                montantEuro: montant,
+                activiteId: actId,
+                contexte: 'stock_appro',
+                details: { tvaDeductible: tvaDeduct, tvaPct: eff.tvaPct, capVente: capVente }
             });
+            // Écriture dans journal comptable global
+            enregistrerEcriture({
+                joueurId: myPlayerId,
+                libelle: 'Appro stock ' + c.icon + ' ' + c.name,
+                compteDebit: 301,   // Stock marchandises (actif +)
+                compteCredit: 260,  // Immobilisations activité (actif -)
+                montantEuro: montant,
+                activiteId: actId,
+                contexte: 'stock_appro'
+            });
+            if (tvaDeduct > 0) {
+                enregistrerEcriture({
+                    joueurId: myPlayerId,
+                    libelle: 'TVA déductible appro ' + c.name + ' ' + Math.round(eff.tvaPct * 100) + '%',
+                    compteDebit: 411,   // TVA à récupérer (actif +)
+                    compteCredit: 260,  // Immobilisations activité (actif -)
+                    montantEuro: tvaDeduct,
+                    activiteId: actId,
+                    contexte: 'stock_appro'
+                });
+            }
             
             sendSystemMessage('📦 ' + myName + ' approvisionne ' + c.icon + ' ' + c.name + ': ' + montant + '€ coût → ' + capVente + '€ vente possible');
             syncComptabiliteToFirebase();
@@ -4556,7 +4583,7 @@ function isAbsent(player) {
             caisse.euro = arrondir2((caisse.euro || 0) - montant);
             act.stockCaisseE = arrondir2((act.stockCaisseE || 0) + montant);
             
-            // DOUBLE ÉCRITURE — Capitalisation perso → activité
+            // DOUBLE ÉCRITURE — Capitalisation perso → activité (D:260 Immob. stocks C:500 Caisse joueur)
             enregistrerEcriture({
                 joueurId: myPlayerId,
                 libelle: 'Capitalisation stock ' + c.icon + ' ' + c.name,
@@ -4564,12 +4591,6 @@ function isAbsent(player) {
                 montantEuro: montant,
                 activiteId: actId,
                 contexte: 'stock_capitalisation'
-            });
-            act.stockJournal.push({
-                op: 'INVEST_E', tour: gameState.toursComplets || 0,
-                debit: { compte: 500, nom: 'Caisse activité', euro: montant, hash: 0 },
-                credit: { compte: 100, nom: 'Capital propriétaire', euro: montant, hash: 0 },
-                timestamp: Date.now()
             });
             
             sendSystemMessage(myName + ' investit ' + montant + '€ dans ' + c.icon + ' ' + c.name);
@@ -4613,13 +4634,26 @@ function isAbsent(player) {
             });
             act.stockCaisseE = arrondir2((act.stockCaisseE || 0) + montant);
             
-            // DOUBLE ÉCRITURE — Emprunt affecté à l'activité (capital seul, intérêts = charge future)
-            act.stockJournal.push({
-                op: 'EMPRUNT', tour: gameState.toursComplets || 0,
-                debit: { compte: 500, nom: 'Caisse activité', euro: montant, hash: 0 },
-                credit: { compte: 164, nom: 'Emprunt bancaire', euro: montant, hash: 0 },
-                details: { interet: interet, total: total, mensualite: mensualite },
-                timestamp: Date.now()
+            // DOUBLE ÉCRITURE — Emprunt affecté à l'activité (D:260 Immob. stocks C:164 Emprunt)
+            enregistrerEcriture({
+                joueurId: myPlayerId,
+                libelle: 'Emprunt stock ' + c.icon + ' ' + c.name + ' (' + montant + '€, mens. ' + mensualite + '€/tour)',
+                compteDebit: 260,   // Immobilisations stocks (actif +)
+                compteCredit: 164,  // Emprunt bancaire (passif +)
+                montantEuro: montant,
+                activiteId: actId,
+                contexte: 'stock_emprunt',
+                details: { interet: interet, total: total, mensualite: mensualite }
+            });
+            // Écriture dans journal comptable global
+            enregistrerEcriture({
+                joueurId: myPlayerId,
+                libelle: 'Emprunt stock ' + c.icon + ' ' + c.name,
+                compteDebit: 260,   // Immobilisations activité (actif +)
+                compteCredit: 164,  // Emprunt bancaire (passif +)
+                montantEuro: montant,
+                activiteId: actId,
+                contexte: 'stock_emprunt'
             });
             
             sendSystemMessage('🏦 ' + myName + ' emprunte ' + montant + '€ pour ' + c.icon + ' ' + c.name + ' (mens: ' + mensualite + '€/tour)');
@@ -8956,6 +8990,25 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                         // Ouvrir le dashboard automatiquement (délai pour éviter conflit modal)
                         stockDashboardOpen = true;
                         setTimeout(function() { showStockDashboard(); }, 500);
+                    }
+                }
+
+                // ═══ PROPOSITION EMPRUNT : après courses+stocks, avant dé ═══
+                var stocksOK = !isStockActif() || stockGestionDone;
+                var coursesOK = !isCoursesActif() || coursesGestionDone;
+                if (isMyTurn && !isBot && stocksOK && coursesOK && !empruntProposeDone && !turnActionInProgress) {
+                    var caisseProp = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
+                    var masseProp = Object.values(COMPTABILITE.caisseJoueurs).reduce(function(s,c){return s+(c.euro||0);}, 0) || (getOrderedPlayers().length * CONFIG.capitalInitial);
+                    var limiteProp = Math.max(CONFIG.limiteEmpruntMin, Math.floor(masseProp / Math.max(1, getOrderedPlayers().length)));
+                    var empruntActuelProp = caisseProp.emprunt || 0;
+                    var capaciteProp = Math.max(0, limiteProp - empruntActuelProp);
+                    if (capaciteProp > 0) {
+                        diceBtn.disabled = true;
+                        diceBtn.style.opacity = '0.5';
+                        empruntProposeDone = true;
+                        setTimeout(function() { showEmpruntProposalModal(); }, 200);
+                    } else {
+                        empruntProposeDone = true;
                     }
                 }
 
@@ -13981,6 +14034,9 @@ function initSystemeDe() {
             // ═══ MODULE COURSES : reset pour le prochain tour ═══
             coursesGestionDone = false;
             coursesDashboardOpen = false;
+
+            // ═══ PROPOSITION EMPRUNT : reset pour le prochain tour ═══
+            empruntProposeDone = false;
             
             // Timeout de sécurité - reset après 10 secondes si bloqué
             const safetyTimeout = setTimeout(() => {
@@ -18129,7 +18185,7 @@ function initSystemeDe() {
             });
             
             // Grouper par classe
-            const parClasse = { 1: [], 2: [], 4: [], 5: [], 6: [], 7: [] };
+            const parClasse = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [] };
             Object.entries(balances).forEach(([compte, soldes]) => {
                 const classe = Math.floor(parseInt(compte) / 100) || parseInt(compte.charAt(0));
                 const info = PLAN_COMPTABLE[compte] || { nom: 'Compte ' + compte, type: '?' };
@@ -18149,6 +18205,7 @@ function initSystemeDe() {
             const classNames = {
                 1: '💼 Classe 1 - Capitaux',
                 2: '🏠 Classe 2 - Immobilisations',
+                3: '📦 Classe 3 - Stocks',
                 4: '🤝 Classe 4 - Tiers',
                 5: '💰 Classe 5 - Financiers',
                 6: '📉 Classe 6 - Charges',
@@ -18587,6 +18644,88 @@ function initSystemeDe() {
         }
         
         // Action rapide : Emprunter
+        // ═══ PROPOSITION EMPRUNT avant dé — modal automatique ═══
+        function showEmpruntProposalModal() {
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
+            var players = getOrderedPlayers();
+            var masse = Object.values(COMPTABILITE.caisseJoueurs).reduce(function(s,c){return s+(c.euro||0);}, 0) || (players.length * CONFIG.capitalInitial);
+            var limite = Math.max(CONFIG.limiteEmpruntMin, Math.floor(masse / Math.max(1, players.length)));
+            var empruntActuel = arrondir2(caisse.emprunt || 0);
+            var capacite = Math.max(0, limite - empruntActuel);
+            var taux = gameConfig.tauxInteret || CONFIG.tauxInteret;
+            var solde = arrondir2(caisse.euro || 0);
+            var defaut = Math.min(100, capacite);
+            var interetPreview = arrondir2((empruntActuel + defaut) * taux);
+
+            if (capacite <= 0) {
+                _activerDe();
+                return;
+            }
+
+            showModal(`
+                <h3>💶 Avant de lancer…</h3>
+                <p style="font-style:italic;color:#374151;background:#fffbeb;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:0 8px 8px 0;margin:0 0 14px;font-size:0.9rem;line-height:1.5;">
+                    Investissez dès aujourd'hui, même sans capital.<br>
+                    Empruntez, avancez, gagnez du temps sur les autres.<br><br>
+                    <em>Après tout… l'argent coûte de l'argent.</em>
+                </p>
+                <div style="background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.9rem;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                        <span>Solde actuel</span><strong>${fmt(solde)}€</strong>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                        <span>Dette actuelle</span><strong style="color:#dc2626;">${fmt(empruntActuel)}€</strong>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;">
+                        <span>Capacité disponible</span><strong style="color:#059669;">${fmt(capacite)}€</strong>
+                    </div>
+                </div>
+                <div style="background:#fee2e2;border-radius:8px;padding:10px;margin-bottom:4px;">
+                    <label style="font-size:0.85rem;font-weight:600;">Montant à emprunter :</label>
+                    <input type="number" id="empruntProposalMontant" value="${defaut}" min="10" max="${capacite}" step="10"
+                        style="width:100%;padding:8px;margin:6px 0;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #fca5a5;border-radius:6px;box-sizing:border-box;"
+                        oninput="(function(){var m=Math.min(${capacite},Math.max(0,parseInt(document.getElementById('empruntProposalMontant').value)||0));var p=document.getElementById('empruntProposalInterets');if(p)p.textContent='Intérêts : '+((${empruntActuel}+m)*${taux}).toFixed(2)+'€/tour';})()">
+                    <p id="empruntProposalInterets" style="font-size:0.8rem;color:#b91c1c;margin:0;">Intérêts : ${interetPreview}€/tour</p>
+                    <p style="font-size:0.75rem;color:#6b7280;margin:4px 0 0;">⚠️ ${Math.round(taux*100)}% par tour complet sur la dette totale</p>
+                </div>
+            `, `
+                <button class="btn btn-primary" style="flex:1;" onclick="executerEmpruntProposal()">💶 Emprunter</button>
+                <button class="btn btn-secondary" style="margin-left:8px;" onclick="closeModal(); _activerDe();">🎲 Non merci</button>
+            `);
+        }
+
+        async function executerEmpruntProposal() {
+            var montant = arrondir2(parseInt(document.getElementById('empruntProposalMontant').value) || 0);
+            if (montant <= 0) { closeModal(); _activerDe(); return; }
+
+            closeModal();
+            var ecriture = await comptaEmprunt(myPlayerId, montant);
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId];
+
+            await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId).update({
+                euro: caisse.euro,
+                emprunt: caisse.emprunt
+            });
+            await syncComptabiliteToFirebase();
+            updatePlayersUI();
+
+            var taux = gameConfig.tauxInteret || CONFIG.tauxInteret;
+            var interetParTour = arrondir2((caisse.emprunt || 0) * taux);
+            sendSystemMessage('🏦 ' + myName + ' emprunte ' + fmt(montant) + '€ avant de jouer (dette: ' + fmt(caisse.emprunt) + '€, intérêts: ' + fmt(interetParTour) + '€/tour)');
+
+            logEvent('BANK_LOAN', myPlayerId, {
+                montant: montant, currency: 'EUR',
+                context: 'pre_dice', nouvelleDetteTotal: caisse.emprunt
+            }, ecriture && ecriture.ledgerEntryId ? [ecriture.ledgerEntryId] : []);
+
+            _activerDe();
+        }
+
+        function _activerDe() {
+            var diceBtn = document.getElementById('rollDiceBtn');
+            if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+        }
+
         function showQuickEmprunter() {
             const caisse = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
             const currentEuro = caisse.euro !== undefined ? caisse.euro : (playersData[myPlayerId]?.euro || CONFIG.capitalInitial);
