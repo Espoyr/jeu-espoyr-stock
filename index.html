@@ -1,10 +1,10 @@
- <!-- V3(7) STOCK TEST - Build 207 - index-01 -->
+ <!-- V3(9) STOCK+COURSES TEST - Build 209 - index-01 -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title># ESPOYR Multijoueur V3(7) STOCK TEST</title>
+   <title># ESPOYR Multijoueur V3(9) STOCK+COURSES TEST</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -362,7 +362,7 @@
         <!-- ÉCRAN ACCUEIL -->
         <div id="homeScreen" class="card">
             <h1><img src="logo__g1_jaune_rond.png" alt="Logo ESPOYR" style="height: 1.5em; vertical-align: middle; margin-right: 8px;">ESPOYR</h1>
-            <p class="subtitle">Jeu collaboratif d'économie - V3(7) STOCK TEST</p>
+            <p class="subtitle">Jeu collaboratif d'économie - V3(9) STOCK+COURSES TEST</p>
             <div class="error-message" id="errorMessage"></div>
             
             <div style="margin-bottom: 15px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
@@ -643,6 +643,7 @@
             416: { nom: 'Créances clients', classe: 4, type: 'actif' },
             421: { nom: 'Personnel', classe: 4, type: 'passif' },
             431: { nom: 'État - Taxes', classe: 4, type: 'passif' },
+            445: { nom: 'Pot TVA État', classe: 4, type: 'actif' },
             468: { nom: 'Consignes Espoyr #', classe: 4, type: 'passif' },
             48: { nom: 'Créances Pot AAA', classe: 4, type: 'actif' },
             480: { nom: 'Créances Pot AAA détail', classe: 4, type: 'actif' },
@@ -1799,7 +1800,10 @@
             STOCKS_INTERET_PCT: 0.10,      // Intérêt emprunt stock 10%
             STOCKS_DUREE_EMPRUNT: 5,       // Remboursement sur 5 tours
             STOCKS_LISTE_TOURS: 3,         // Nouvelle liste de courses tous les 3 tours
-            STOCKS_EQUIP_BONUS: 0.10       // +10% marge par équipement
+            STOCKS_EQUIP_BONUS: 0.10,      // +10% marge par équipement
+            // ═══ MODULE COURSES / LISTES D'ACHATS (optionnel) ═══
+            COURSES_ACTIFS: false,         // Désactivé par défaut — activable au lancement
+            COURSES_MAX_REPORTS: 3         // Max reports partagés avec stocks
         };
         
         // Config modifiable par l'host
@@ -1827,6 +1831,11 @@
         // ═══ ÉTAT MODULE STOCKS ═══
         let stockGestionDone = false;   // true quand le joueur a fermé le dashboard ce tour
         let stockDashboardOpen = false; // empêche les ouvertures multiples
+
+        // ═══ ÉTAT MODULE COURSES ═══
+        let coursesGestionDone = false;   // true quand le joueur a validé la liste ce tour
+        let coursesDashboardOpen = false; // empêche les ouvertures multiples
+        let coursesEtatJoueurs = {};      // { joueurId: { tour_0: [{caseId, montantBase, fait}] } }
 
         // ========== REPRISE / TICKET JOUEUR (A+B) ==========
         const RESUME_KEY_PREFIX = 'ESPOYR_RESUME_';
@@ -4142,7 +4151,280 @@ function isAbsent(player) {
             var diceBtn = document.getElementById('rollDiceBtn');
             if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
         }
-        
+
+        // ═══════════════════════════════════════════════════════════════
+        // MODULE COURSES / LISTES D'ACHATS — Build 209
+        // ═══════════════════════════════════════════════════════════════
+
+        var LISTES_COURSES_GROUPES = {
+            A: [
+                { caseId: 21, montantBase: 67 },  // Électronique
+                { caseId: 5,  montantBase: 33 },  // Boucherie
+                { caseId: 16, montantBase: 30 },  // Fromagerie
+                { caseId: 8,  montantBase: 20 },  // Coiffeur
+                { caseId: 11, montantBase: 15 }   // Café
+            ],
+            B: [
+                { caseId: 14, montantBase: 40 },  // Garage
+                { caseId: 7,  montantBase: 40 },  // Boulangerie
+                { caseId: 19, montantBase: 25 },  // Papeterie
+                { caseId: 17, montantBase: 22 },  // Chaussures
+                { caseId: 10, montantBase: 20 },  // Fleuriste
+                { caseId: 12, montantBase: 17 }   // Restaurant
+            ],
+            C: [
+                { caseId: 3,  montantBase: 50 },  // Pharmacie
+                { caseId: 1,  montantBase: 25 },  // Vêtements
+                { caseId: 6,  montantBase: 30 },  // Librairie
+                { caseId: 15, montantBase: 33 },  // Poissonnerie
+                { caseId: 22, montantBase: 30 }   // Quincaillerie
+            ]
+        };
+
+        var LISTES_COURSES_PERMS = [
+            ['A','B','C'],
+            ['B','C','A'],
+            ['C','A','B'],
+            ['A','C','B'],
+            ['C','B','A'],
+            ['B','A','C']
+        ];
+
+        function isCoursesActif() {
+            return !!(gameConfig.COURSES_ACTIFS || CONFIG.COURSES_ACTIFS);
+        }
+
+        function getListeCoursesJoueur(joueurIdx, tourIdx) {
+            var perm = LISTES_COURSES_PERMS[Math.min(joueurIdx, 5)];
+            var groupeKey = perm[tourIdx % 3];
+            return LISTES_COURSES_GROUPES[groupeKey];
+        }
+
+        function initCoursesJoueur(joueurId, joueurIdx, tourIdx) {
+            if (!coursesEtatJoueurs[joueurId]) coursesEtatJoueurs[joueurId] = {};
+            var key = 'tour_' + tourIdx;
+            if (!coursesEtatJoueurs[joueurId][key]) {
+                var items = getListeCoursesJoueur(joueurIdx, tourIdx);
+                coursesEtatJoueurs[joueurId][key] = items.map(function(item) {
+                    return { caseId: item.caseId, montantBase: item.montantBase, fait: false, ajourné: false };
+                });
+            }
+            return coursesEtatJoueurs[joueurId][key];
+        }
+
+        function getMontantEffectifCourse(caseId) {
+            var c = CASES[caseId];
+            if (!c || !c.stock) return 0;
+            var montantBase = c.stock.prixPassage;
+            var coeffInflation = 1 + (inflationTauxActuel || 0);
+            var act = COMPTABILITE.caisseActivites[caseId] || {};
+            var nbEquip = (act.equipementA || 0) + (act.equipementB || 0);
+            var coeffEquip = 1 + nbEquip * (gameConfig.STOCKS_EQUIP_BONUS || 0.10);
+            return arrondir2(montantBase * coeffInflation * coeffEquip);
+        }
+
+        function getStatutCourseItem(item) {
+            if (item.fait) return 'fait';
+            var act = COMPTABILITE.caisseActivites[item.caseId];
+            if (!act || !act.proprietaireId) return 'ferme';
+            if (act.proprietaireId === myPlayerId) return 'propre';
+            if (isStockActif()) {
+                var c = CASES[item.caseId];
+                if (c && c.stock) {
+                    var eff = getStockEffectif(item.caseId);
+                    var montantEff = getMontantEffectifCourse(item.caseId);
+                    if (eff && arrondir2((act.stockCout || 0) * eff.margeEffective) < montantEff) return 'rupture';
+                }
+            }
+            return 'achetable';
+        }
+
+        function getCoursesItemsActuels() {
+            var players = getOrderedPlayers();
+            var joueurIdx = players.findIndex(function(p) { return p.id === myPlayerId; });
+            if (joueurIdx < 0) joueurIdx = 0;
+            var joueur = players[joueurIdx];
+            var tourIdx = (joueur.passagesDepart || 0) % 3;
+            return { items: initCoursesJoueur(myPlayerId, joueurIdx, tourIdx), joueurIdx: joueurIdx, tourIdx: tourIdx };
+        }
+
+        function showCoursesDashboard() {
+            if (coursesDashboardOpen) return;
+            coursesDashboardOpen = true;
+
+            var ctx = getCoursesItemsActuels();
+            var items = ctx.items;
+            var tourIdx = ctx.tourIdx;
+            var perm = LISTES_COURSES_PERMS[Math.min(ctx.joueurIdx, 5)];
+            var groupeKey = perm[tourIdx % 3];
+
+            var nbFait = 0;
+            var nbAchetable = 0;
+            var totalBase = 0;
+            for (var i = 0; i < items.length; i++) {
+                totalBase += items[i].montantBase;
+                if (items[i].fait) nbFait++;
+                else if (getStatutCourseItem(items[i]) === 'achetable') nbAchetable++;
+            }
+
+            var html = '<h3 style="margin:0 0 8px;text-align:center;">🛒 Ma liste de courses</h3>';
+            html += '<p style="font-size:0.85rem;color:#6b7280;text-align:center;margin:0 0 14px;">';
+            html += 'Tour ' + (tourIdx + 1) + '/3 — Groupe ' + groupeKey + ' — ' + items.length + ' achats — Total base: ' + totalBase + '€</p>';
+
+            for (var j = 0; j < items.length; j++) {
+                var item = items[j];
+                var c = CASES[item.caseId];
+                var statut = getStatutCourseItem(item);
+                var act = COMPTABILITE.caisseActivites[item.caseId];
+                var montantEff = getMontantEffectifCourse(item.caseId);
+                var tvaPct = (c && c.stock && c.stock.tvaPct) ? c.stock.tvaPct : 0.21;
+
+                var borderColor = '#e5e7eb';
+                var bgColor = '#f9fafb';
+                var iconStatut = '⬜';
+                var sousTitre = '';
+                var btnHtml = '';
+
+                if (statut === 'fait') {
+                    bgColor = '#f0fdf4'; borderColor = '#86efac'; iconStatut = '✅';
+                    sousTitre = 'Acheté ✓';
+                } else if (statut === 'propre') {
+                    iconStatut = '🏠'; sousTitre = 'Propre commerce';
+                } else if (statut === 'ferme') {
+                    iconStatut = '🚫'; sousTitre = 'Fermé (pas de proprio)';
+                } else if (statut === 'rupture') {
+                    iconStatut = '📦'; sousTitre = 'Rupture de stock';
+                } else if (statut === 'achetable') {
+                    bgColor = '#fffbeb'; borderColor = '#fcd34d';
+                    var proprio = act ? (playersData[act.proprietaireId] ? playersData[act.proprietaireId].name : act.proprietaireId) : '?';
+                    sousTitre = proprio + ' — TVA ' + Math.round(tvaPct * 100) + '%';
+                    btnHtml = '<button class="btn btn-primary" style="padding:6px 14px;font-size:0.85rem;white-space:nowrap;" onclick="acheterCourse(' + item.caseId + ')">🛒 ' + montantEff + '€</button>';
+                }
+
+                html += '<div style="background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">';
+                html += '<div style="display:flex;align-items:center;gap:10px;">';
+                html += '<span style="font-size:1.3rem;">' + (c ? c.icon : '?') + '</span>';
+                html += '<div><div style="font-weight:700;">' + (c ? c.name : 'Activité ' + item.caseId) + '</div>';
+                html += '<div style="font-size:0.8rem;color:#6b7280;">' + sousTitre + '</div></div>';
+                html += '</div>';
+                if (btnHtml) {
+                    html += '<div>' + btnHtml + '</div>';
+                } else {
+                    html += '<span style="font-size:1.3rem;">' + iconStatut + '</span>';
+                }
+                html += '</div>';
+            }
+
+            html += '<div style="background:#f3f4f6;border-radius:8px;padding:8px;text-align:center;font-size:0.85rem;color:#6b7280;margin-top:4px;">';
+            html += '✅ ' + nbFait + ' fait(s) | 🛒 ' + nbAchetable + ' à faire | ' + items.length + ' total';
+            html += '</div>';
+
+            showModal(html, '<button class="btn btn-primary" onclick="closeCoursesDashboard()">✅ OK — Continuer</button>');
+        }
+
+        function closeCoursesDashboard() {
+            closeModal();
+            coursesGestionDone = true;
+            coursesDashboardOpen = false;
+            var diceBtn = document.getElementById('rollDiceBtn');
+            if (diceBtn) { diceBtn.disabled = false; diceBtn.style.opacity = '1'; }
+        }
+
+        async function acheterCourse(caseId) {
+            var c = CASES[caseId];
+            if (!c) return;
+
+            var ctx = getCoursesItemsActuels();
+            var items = ctx.items;
+
+            var item = null;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].caseId === caseId) { item = items[i]; break; }
+            }
+            if (!item) return;
+
+            var statut = getStatutCourseItem(item);
+            if (statut !== 'achetable') return;
+
+            var act = COMPTABILITE.caisseActivites[caseId];
+            var proprietaireId = act.proprietaireId;
+
+            var montantTTC = getMontantEffectifCourse(caseId);
+            var tvaPct = (c.stock && c.stock.tvaPct) ? c.stock.tvaPct : 0.21;
+            var montantTVA = arrondir2(montantTTC * tvaPct / (1 + tvaPct));
+            var montantHT = arrondir2(montantTTC - montantTVA);
+
+            initCaisseJoueur(myPlayerId);
+            var soldeAcheteur = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId].euro || 0);
+
+            if (soldeAcheteur < montantTTC) {
+                coursesDashboardOpen = false;
+                showModal(
+                    '<h3>💳 Fonds insuffisants</h3>' +
+                    '<p>Il vous faut <b>' + montantTTC + '€</b> pour acheter chez ' + c.icon + ' ' + c.name + '.</p>' +
+                    '<p style="color:#ef4444;font-size:0.9rem;">Votre solde : ' + soldeAcheteur + '€</p>' +
+                    '<p style="color:#6b7280;font-size:0.8rem;">Le financement (emprunt / ajournement) sera disponible au prochain build.</p>',
+                    '<button class="btn btn-primary" onclick="coursesDashboardOpen=false; showCoursesDashboard()">← Retour</button>'
+                );
+                return;
+            }
+
+            // === MAJ SOLDES ===
+            initCaisseJoueur(proprietaireId);
+            initCaisseActivite(caseId);
+
+            COMPTABILITE.caisseJoueurs[myPlayerId].euro = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId].euro - montantTTC);
+            COMPTABILITE.caisseJoueurs[myPlayerId].facturesPayees = arrondir2((COMPTABILITE.caisseJoueurs[myPlayerId].facturesPayees || 0) + montantTTC);
+            COMPTABILITE.caisseJoueurs[myPlayerId].taxesPayees = arrondir2((COMPTABILITE.caisseJoueurs[myPlayerId].taxesPayees || 0) + montantTVA);
+
+            if (isStockActif()) {
+                COMPTABILITE.caisseActivites[caseId].stockCaisseE = arrondir2((COMPTABILITE.caisseActivites[caseId].stockCaisseE || 0) + montantHT);
+            } else {
+                COMPTABILITE.caisseJoueurs[proprietaireId].euro = arrondir2(COMPTABILITE.caisseJoueurs[proprietaireId].euro + montantHT);
+            }
+            COMPTABILITE.caisseJoueurs[proprietaireId].facturesRecues = arrondir2((COMPTABILITE.caisseJoueurs[proprietaireId].facturesRecues || 0) + montantHT);
+            COMPTABILITE.caisseJoueurs[proprietaireId].revenusDepuisPassage = arrondir2((COMPTABILITE.caisseJoueurs[proprietaireId].revenusDepuisPassage || 0) + montantHT);
+            COMPTABILITE.caisseJoueurs[proprietaireId].tvaCollectee = arrondir2((COMPTABILITE.caisseJoueurs[proprietaireId].tvaCollectee || 0) + montantTVA);
+            COMPTABILITE.caisseActivites[caseId].recettes = arrondir2((COMPTABILITE.caisseActivites[caseId].recettes || 0) + montantTTC);
+
+            COMPTABILITE.etat.potTVA = arrondir2((COMPTABILITE.etat.potTVA || 0) + montantTVA);
+            if (!COMPTABILITE.etat.recettes) COMPTABILITE.etat.recettes = {};
+            COMPTABILITE.etat.recettes.tva = arrondir2((COMPTABILITE.etat.recettes.tva || 0) + montantTVA);
+            if (!COMPTABILITE.etat.grandLivre) COMPTABILITE.etat.grandLivre = {};
+            COMPTABILITE.etat.grandLivre[445] = arrondir2((COMPTABILITE.etat.grandLivre[445] || 0) + montantTVA);
+
+            if (typeof ajouterPIB === 'function') ajouterPIB(montantTTC);
+
+            // === ÉCRITURES COMPTABLES ===
+            // Acheteur : charge HT
+            enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Courses ' + c.name + ' HT', compteDebit: 613, compteCredit: 500, montantEuro: montantHT, activiteId: caseId, contexte: 'courses' });
+            // Acheteur : TVA supportée
+            enregistrerEcriture({ joueurId: myPlayerId, libelle: 'TVA courses ' + c.name + ' ' + Math.round(tvaPct * 100) + '%', compteDebit: 635, compteCredit: 500, montantEuro: montantTVA, activiteId: caseId, contexte: 'courses' });
+            // Propriétaire : recette HT
+            enregistrerEcriture({ joueurId: proprietaireId, libelle: 'Vente courses ' + c.name + ' HT', compteDebit: 500, compteCredit: 700, montantEuro: montantHT, activiteId: caseId, contexte: 'courses' });
+            // État : TVA collectée
+            enregistrerEcriture({ joueurId: 'ETAT', libelle: 'TVA courses ' + c.name, compteDebit: 445, compteCredit: 704, montantEuro: montantTVA, activiteId: caseId, contexte: 'etat' });
+
+            // Marquer comme fait
+            item.fait = true;
+
+            // Sync Firebase
+            try {
+                await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/euro').set(Math.max(0, COMPTABILITE.caisseJoueurs[myPlayerId].euro));
+                await db.ref('parties/' + currentGameCode + '/players/' + proprietaireId + '/euro').set(Math.max(0, COMPTABILITE.caisseJoueurs[proprietaireId].euro));
+                await syncComptabiliteToFirebase();
+            } catch(e) {
+                console.error('Sync Firebase courses:', e);
+            }
+
+            var propName = playersData[proprietaireId] ? playersData[proprietaireId].name : proprietaireId;
+            sendSystemMessage('🛒 ' + myName + ' achète chez ' + c.icon + ' ' + c.name + ' (' + propName + ') : ' + montantTTC + '€ TTC — HT: ' + montantHT + '€, TVA: ' + montantTVA + '€');
+
+            // Rafraîchir le modal
+            coursesDashboardOpen = false;
+            showCoursesDashboard();
+        }
+
         // ═══ MODULE STOCKS — Modal Approvisionnement ═══
         function showStockAppro(actId) {
             var c = CASES[actId];
@@ -8624,8 +8906,27 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 diceBtn.disabled = !isMyTurn;
                 diceBtn.style.opacity = isMyTurn ? '1' : '0.5';
                 
+                // ═══ MODULE COURSES : intercepter AVANT les stocks ═══
+                if (isMyTurn && isCoursesActif() && !coursesGestionDone && !isBot) {
+                    var ctxC = getCoursesItemsActuels();
+                    var itemsC = ctxC.items;
+                    var hasAchetable = false;
+                    for (var _i = 0; _i < itemsC.length; _i++) {
+                        if (getStatutCourseItem(itemsC[_i]) === 'achetable') { hasAchetable = true; break; }
+                    }
+                    if (hasAchetable && !coursesDashboardOpen) {
+                        diceBtn.disabled = true;
+                        diceBtn.style.opacity = '0.5';
+                        coursesDashboardOpen = true;
+                        setTimeout(function() { showCoursesDashboard(); }, 300);
+                    } else if (!hasAchetable) {
+                        // Rien à acheter ce tour → skip silencieux
+                        coursesGestionDone = true;
+                    }
+                }
+
                 // ═══ MODULE STOCKS : intercepter avant le lancer ═══
-                if (isMyTurn && isStockActif() && !stockGestionDone && !isBot) {
+                if (isMyTurn && isStockActif() && !stockGestionDone && !isBot && (coursesGestionDone || !isCoursesActif())) {
                     // Vérifier que le joueur possède au moins une activité
                     const mesActivites = Object.entries(COMPTABILITE.caisseActivites || {})
                         .filter(function(e) { return e[1].proprietaireId === myPlayerId; });
@@ -8766,6 +9067,11 @@ if (isMyTurn) {
                 let caseIcon = c.icon;
                 let caseName = c.name;
                 let caseClass = c.type;
+                // ═══ MODULE COURSES : Case 9 = Parking ═══
+                if (isCoursesActif && isCoursesActif() && c.id === 9) {
+                    caseIcon = '🅿️';
+                    caseName = 'Parking';
+                }
                 if (cc) {
                     caseIcon = cc.icon;
                     caseName = cc.nom;
@@ -13236,6 +13542,14 @@ function initSystemeDe() {
         }
         
         async function handleFrais(c) {
+            // ═══ MODULE COURSES : Case 9 = Parking (gratuit) ═══
+            if (isCoursesActif() && c.id === 9) {
+                showModal(
+                    '<h3>🅿️ Parking</h3><p style="font-size:0.95rem;">Rien ne se passe. La case Frais alimentaires est remplacée par un parking gratuit quand le module Courses est actif.</p>',
+                    '<button class="btn btn-primary" onclick="closeModal(); nextTurn();">OK</button>'
+                );
+                return;
+            }
             const soldeBefore = COMPTABILITE.caisseJoueurs[myPlayerId]?.euro || 0;
             
             // ═══ Frais indexés à l'inflation ═══
@@ -13643,6 +13957,10 @@ function initSystemeDe() {
             // ═══ MODULE STOCKS : reset pour le prochain tour ═══
             stockGestionDone = false;
             stockDashboardOpen = false;
+
+            // ═══ MODULE COURSES : reset pour le prochain tour ═══
+            coursesGestionDone = false;
+            coursesDashboardOpen = false;
             
             // Timeout de sécurité - reset après 10 secondes si bloqué
             const safetyTimeout = setTimeout(() => {
