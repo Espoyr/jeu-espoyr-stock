@@ -1827,6 +1827,170 @@
         let casesCollectives = {};
         let achatCollectifEnCours = false;
 
+        // ═══ COURSES — Achat chez artisan AAA (mix €/#) ═══
+        function acheterAAAMixCourses(caseId) {
+            var c = CASES[caseId];
+            if (!c) return;
+            var ctx = getCoursesItemsActuels();
+            var item = ctx.items.find(function(it) { return it.caseId === caseId; });
+            if (!item || item.fait) return;
+            var act = COMPTABILITE.caisseActivites[caseId];
+            var proprietaireId = act ? act.proprietaireId : null;
+            if (!proprietaireId) return;
+
+            var montantTTC = isStockActif() && c.stock ? getMontantEffectifCourse(caseId) : arrondir2(item.montantBase * (1 + (inflationTauxActuel || 0)));
+            montantTTC = arrondir2(montantTTC);
+            var tvaPct = (c.stock && c.stock.tvaPct) ? c.stock.tvaPct : 0.21;
+            var myEuro = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId]?.euro || 0);
+            var myEspoyr = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId]?.espoyr || 0);
+            var proprio = playersData[proprietaireId];
+
+            var maxPctHash = Math.min(100, Math.floor(myEspoyr / montantTTC * 100));
+            var minPctHash = Math.max(0, Math.ceil((montantTTC - myEuro) / montantTTC * 100));
+            var defaultPct = Math.max(minPctHash, Math.min(50, maxPctHash));
+
+            coursesDashboardOpen = false;
+            showModal(`
+                <h3>🟢🔶 Achat chez artisan local AAA</h3>
+                <p>${c.icon} <strong>${c.terme||c.name}</strong> (${c.objet||''}) — ${proprio?.avatar||''} ${proprio?.name||'?'} 🔶</p>
+                <p style="font-size:1.1rem;"><strong>Prix :</strong> <span style="color:#dc2626;">${montantTTC.toFixed(2)}€ TTC</span></p>
+                <div style="background:#dbeafe;padding:8px;border-radius:8px;margin:8px 0;font-size:0.85rem;">
+                    Ton solde : ${myEuro.toFixed(2)}€ / ${myEspoyr.toFixed(2)}#
+                </div>
+                <div style="margin:14px 0;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.82rem;font-weight:600;margin-bottom:4px;">
+                        <span>💶 100% €</span><span>🔶 100% #</span>
+                    </div>
+                    <input type="range" id="coursesAAASlider" min="${minPctHash}" max="${maxPctHash}" value="${defaultPct}"
+                           oninput="updateCoursesAAADisplay(${montantTTC})" style="width:100%;accent-color:#059669;">
+                    <div style="text-align:center;margin-top:6px;">
+                        <span id="coursesAAAPctLabel" style="font-size:1rem;font-weight:600;color:#065f46;">${defaultPct}% en #</span>
+                    </div>
+                </div>
+                <div id="coursesAAAResult" style="text-align:center;padding:10px;background:#f0fdf4;border-radius:8px;border:2px solid #059669;"></div>
+                <p style="font-size:0.78rem;color:#6b7280;margin-top:6px;">🔶 Membre AAA — acceptation automatique</p>
+            `, `
+                <button class="btn btn-primary" id="coursesAAABtn" onclick="validerAAAMixCourses(${caseId}, '${proprietaireId}', ${montantTTC}, ${tvaPct})">✅ Payer</button>
+                <button class="btn btn-secondary" style="margin-left:8px;" onclick="coursesDashboardOpen=false; showCoursesDashboard()">← Retour</button>
+            `);
+            updateCoursesAAADisplay(montantTTC);
+        }
+
+        function updateCoursesAAADisplay(montantTTC) {
+            var pct = parseInt(document.getElementById('coursesAAASlider')?.value) || 0;
+            var partHash = arrondirHash(montantTTC * pct / 100);
+            var partEuro = arrondir2(montantTTC - partHash);
+            var label = document.getElementById('coursesAAAPctLabel');
+            var result = document.getElementById('coursesAAAResult');
+            if (label) label.textContent = pct + '% en #';
+            if (result) result.innerHTML = '<p style="margin:0;font-size:1.1rem;"><strong>💶 ' + partEuro.toFixed(2) + '€</strong>  +  <strong style="color:#059669;">🔶 ' + partHash.toFixed(1) + '#</strong></p>';
+            var slider = document.getElementById('coursesAAASlider');
+            if (slider) { slider.dataset.euroAmount = partEuro; slider.dataset.hashAmount = partHash; }
+        }
+
+        async function validerAAAMixCourses(caseId, proprietaireId, montantTTC, tvaPct) {
+            var slider = document.getElementById('coursesAAASlider');
+            if (!slider) return;
+            var partEuro = arrondir2(parseFloat(slider.dataset.euroAmount) || 0);
+            var partHash = arrondirHash(parseFloat(slider.dataset.hashAmount) || 0);
+            var c = CASES[caseId];
+            var ctx = getCoursesItemsActuels();
+            var item = ctx.items.find(function(it) { return it.caseId === caseId; });
+            if (!item) return;
+            closeModal();
+
+            initCaisseJoueur(myPlayerId); initCaisseJoueur(proprietaireId); initCaisseActivite(caseId);
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId];
+            var caisseProp = COMPTABILITE.caisseJoueurs[proprietaireId];
+
+            // Calcul HT/TVA sur part €
+            var tvaEuro = arrondir2(partEuro * tvaPct / (1 + tvaPct));
+            var htEuro = arrondir2(partEuro - tvaEuro);
+            // Calcul HT/TVA sur part # (en valeur €-équivalent pour comptabilité)
+            var htHash = arrondirHash(partHash - arrondirHash(partHash * tvaPct / (1 + tvaPct)));
+
+            // Acheteur
+            caisse.euro = arrondir2((caisse.euro || 0) - partEuro);
+            caisse.espoyr = arrondirHash((caisse.espoyr || 0) - partHash);
+            caisse.facturesPayees = arrondir2((caisse.facturesPayees || 0) + partEuro);
+
+            // Vendeur
+            if (isStockActif()) {
+                COMPTABILITE.caisseActivites[caseId].stockCaisseE = arrondir2((COMPTABILITE.caisseActivites[caseId].stockCaisseE || 0) + htEuro);
+            } else {
+                caisseProp.euro = arrondir2((caisseProp.euro || 0) + htEuro);
+            }
+            caisseProp.espoyr = arrondirHash((caisseProp.espoyr || 0) + partHash);
+            caisseProp.revenusDepuisPassage = arrondir2((caisseProp.revenusDepuisPassage || 0) + htEuro);
+            caisseProp.tvaCollectee = arrondir2((caisseProp.tvaCollectee || 0) + tvaEuro);
+            COMPTABILITE.caisseActivites[caseId].recettes = arrondir2((COMPTABILITE.caisseActivites[caseId].recettes || 0) + partEuro + partHash);
+
+            // TVA État
+            COMPTABILITE.etat.potTVA = arrondir2((COMPTABILITE.etat.potTVA || 0) + tvaEuro);
+            if (!COMPTABILITE.etat.recettes) COMPTABILITE.etat.recettes = {};
+            COMPTABILITE.etat.recettes.tva = arrondir2((COMPTABILITE.etat.recettes.tva || 0) + tvaEuro);
+            if (!COMPTABILITE.etat.grandLivre) COMPTABILITE.etat.grandLivre = {};
+            COMPTABILITE.etat.grandLivre[445] = arrondir2((COMPTABILITE.etat.grandLivre[445] || 0) + tvaEuro);
+
+            // Écritures
+            if (htEuro > 0) enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Courses AAA ' + (c.terme||c.name) + ' HT', compteDebit: 613, compteCredit: 500, montantEuro: htEuro, activiteId: caseId, contexte: 'courses' });
+            if (tvaEuro > 0) enregistrerEcriture({ joueurId: myPlayerId, libelle: 'TVA courses AAA ' + (c.terme||c.name) + ' ' + Math.round(tvaPct*100) + '%', compteDebit: 635, compteCredit: 500, montantEuro: tvaEuro, activiteId: caseId, contexte: 'courses' });
+            if (partHash > 0) enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Courses AAA # ' + (c.terme||c.name), compteDebit: 613, compteCredit: 501, montantEspoyr: partHash, activiteId: caseId, contexte: 'courses' });
+            if (htEuro > 0) enregistrerEcriture({ joueurId: proprietaireId, libelle: 'Vente AAA ' + (c.terme||c.name) + ' HT', compteDebit: 500, compteCredit: 700, montantEuro: htEuro, activiteId: caseId, contexte: 'courses' });
+            if (tvaEuro > 0) enregistrerEcriture({ joueurId: proprietaireId, libelle: 'TVA AAA ' + (c.terme||c.name), compteDebit: 500, compteCredit: 445, montantEuro: tvaEuro, activiteId: caseId, contexte: 'courses' });
+            if (partHash > 0) enregistrerEcriture({ joueurId: proprietaireId, libelle: 'Recette # AAA ' + (c.terme||c.name), compteDebit: 501, compteCredit: 700, montantEspoyr: partHash, activiteId: caseId, contexte: 'courses' });
+            if (typeof ajouterPIB === 'function') ajouterPIB(partEuro);
+
+            item.fait = true;
+            try {
+                await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/euro').set(Math.max(0, caisse.euro));
+                await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/espoyr').set(caisse.espoyr);
+                await db.ref('parties/' + currentGameCode + '/players/' + proprietaireId + '/euro').set(Math.max(0, caisseProp.euro));
+                await db.ref('parties/' + currentGameCode + '/players/' + proprietaireId + '/espoyr').set(caisseProp.espoyr);
+                await syncComptabiliteToFirebase();
+            } catch(e) { console.error('Sync AAA courses:', e); }
+
+            var propName = playersData[proprietaireId]?.name || proprietaireId;
+            sendSystemMessage('🟢🔶 ' + myName + ' achète ' + (c.objet||c.name) + ' chez ' + propName + ' : ' + partEuro.toFixed(2) + '€ + ' + partHash.toFixed(1) + '#');
+            coursesDashboardOpen = false;
+            showCoursesDashboard();
+        }
+
+        // ═══ COURSES — Proposer un travail pour la collectivité (+50#) ═══
+        async function proposerTravailCourses() {
+            var isMembre = COMPTABILITE.potAAA?.membres?.includes(myPlayerId) || playersData[myPlayerId]?.membreAAA;
+            if (!isMembre) return;
+            var potDispo = COMPTABILITE.potAAA?.solde || 0;
+            if (potDispo < 50) { sendSystemMessage('⚠️ Pot AAA insuffisant pour proposer un travail.'); return; }
+
+            // Choisir le premier travail disponible
+            var utilises = new Set(Object.values(casesCollectives || {}).map(function(c) { return c.travauxCoopId; }));
+            var travail = TRAVAUX_COOP.find(function(t) { return !utilises.has(t.id); }) || TRAVAUX_COOP[0];
+
+            var gain = 50.0;
+            initCaisseJoueur(myPlayerId);
+            var caisse = COMPTABILITE.caisseJoueurs[myPlayerId];
+            caisse.espoyr = arrondirHash((caisse.espoyr || 0) + gain);
+            COMPTABILITE.potAAA.solde = arrondirHash((COMPTABILITE.potAAA.solde || 0) - gain);
+            COMPTABILITE.potAAA.circulationHash = arrondirHash((COMPTABILITE.potAAA.circulationHash || 0) + gain);
+
+            enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Travail collectivité: ' + travail.nom, compteDebit: 501, compteCredit: 468, montantEspoyr: gain });
+            enregistrerEcriture({ joueurId: 'POT_AAA', libelle: 'Distribution travail ' + myName, compteDebit: 671, compteCredit: 580, montantEspoyr: gain });
+
+            // Skip prochain tour
+            var skipSnap = await gameRef.child('skipTurns/' + myPlayerId).once('value');
+            await gameRef.child('skipTurns/' + myPlayerId).set((skipSnap.val() || 0) + 1);
+            var newCount = (playersData[myPlayerId]?.actionContribCeTour || 0) + 1;
+            await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/actionContribCeTour').set(newCount);
+            await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/espoyr').set(caisse.espoyr);
+            await syncComptabiliteToFirebase();
+
+            sendSystemMessage('🔶 ' + myName + ' propose : ' + travail.nom + ' → +' + gain.toFixed(1) + '# reçus ⏭️ prochain tour passé');
+
+            coursesDashboardOpen = false;
+            showCoursesDashboard(); // refresh immédiat avec nouveaux #
+        }
+
         // ═══ MODULE COURSES — Achat en grande surface (ferme/rupture → importation) ═══
         async function acheterGrandeSurface(caseId) {
             var c = CASES[caseId];
@@ -1836,9 +2000,9 @@
             var item = ctx.items.find(function(it) { return it.caseId === caseId; });
             if (!item || item.fait) return;
 
-            var montantTTC = item.montantBase; // prix base sans inflation pour grande surface
-            if (isStockActif() && c.stock) montantTTC = getMontantEffectifCourse(caseId);
-            else montantTTC = arrondir2(item.montantBase * (1 + (inflationTauxActuel || 0)));
+            // Prix = montantBase × inflation × 0.9 (-10%)
+            var montantBase = isStockActif() && c.stock ? getMontantEffectifCourse(caseId) : arrondir2(item.montantBase * (1 + (inflationTauxActuel || 0)));
+            var montantTTC = arrondir2(montantBase * 0.9);
             var tvaPct = (c.stock && c.stock.tvaPct) ? c.stock.tvaPct : 0.21;
             var montantTVA = arrondir2(montantTTC * tvaPct / (1 + tvaPct));
             var montantHT = arrondir2(montantTTC - montantTVA);
@@ -1846,41 +2010,40 @@
             initCaisseJoueur(myPlayerId);
             var caisse = COMPTABILITE.caisseJoueurs[myPlayerId];
             if ((caisse.euro || 0) < montantTTC) {
-                showModal('<h3>⚠️ Solde insuffisant</h3><p>Tu n\'as pas assez pour acheter en grande surface (' + montantTTC + '€).</p><p>Solde : ' + fmt(caisse.euro || 0) + '€</p>',
+                coursesDashboardOpen = false;
+                showModal('<h3>⚠️ Solde insuffisant</h3><p>Il faut <b>' + montantTTC.toFixed(2) + '€</b> pour la grande surface.</p><p>Solde : ' + (caisse.euro||0).toFixed(2) + '€</p>',
                     '<button class="btn btn-secondary" onclick="coursesDashboardOpen=false; showCoursesDashboard()">← Retour</button>');
                 return;
             }
 
-            // Déduire du joueur
             caisse.euro = arrondir2((caisse.euro || 0) - montantTTC);
             caisse.facturesPayees = arrondir2((caisse.facturesPayees || 0) + montantTTC);
 
-            // Créditer horsCircuit (importation)
             COMPTABILITE.horsCircuit = COMPTABILITE.horsCircuit || { solde: 0, recettes: 0, journal: [] };
+            if (!COMPTABILITE.horsCircuit.grandLivre) COMPTABILITE.horsCircuit.grandLivre = { 550: 0, 792: 0 };
             COMPTABILITE.horsCircuit.solde = arrondir2((COMPTABILITE.horsCircuit.solde || 0) + montantHT);
             COMPTABILITE.horsCircuit.recettes = arrondir2((COMPTABILITE.horsCircuit.recettes || 0) + montantHT);
-            if (!COMPTABILITE.horsCircuit.grandLivre) COMPTABILITE.horsCircuit.grandLivre = { 550: 0, 792: 0 };
             COMPTABILITE.horsCircuit.grandLivre[550] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[550] || 0) + montantHT);
             COMPTABILITE.horsCircuit.grandLivre[792] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[792] || 0) + montantHT);
+            COMPTABILITE.etat.potTVA = arrondir2((COMPTABILITE.etat.potTVA || 0) + montantTVA);
+            if (!COMPTABILITE.etat.recettes) COMPTABILITE.etat.recettes = {};
+            COMPTABILITE.etat.recettes.tva = arrondir2((COMPTABILITE.etat.recettes.tva || 0) + montantTVA);
+            if (!COMPTABILITE.etat.grandLivre) COMPTABILITE.etat.grandLivre = {};
+            COMPTABILITE.etat.grandLivre[445] = arrondir2((COMPTABILITE.etat.grandLivre[445] || 0) + montantTVA);
 
-            // Écritures comptables
             enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Grande surface ' + (c.terme||c.name) + ' (' + (c.objet||'') + ') HT', compteDebit: 613, compteCredit: 500, montantEuro: montantHT, contexte: 'horsCircuit' });
-            if (montantTVA > 0) {
-                enregistrerEcriture({ joueurId: myPlayerId, libelle: 'TVA grande surface ' + (c.terme||c.name) + ' ' + Math.round(tvaPct * 100) + '%', compteDebit: 635, compteCredit: 500, montantEuro: montantTVA, contexte: 'horsCircuit' });
-            }
+            if (montantTVA > 0) enregistrerEcriture({ joueurId: myPlayerId, libelle: 'TVA GS ' + (c.terme||c.name) + ' ' + Math.round(tvaPct*100) + '%', compteDebit: 635, compteCredit: 500, montantEuro: montantTVA, contexte: 'horsCircuit' });
             enregistrerEcriture({ joueurId: 'HORS_CIRCUIT', libelle: 'Import ' + (c.terme||c.name) + ' (' + (c.objet||'') + ')', compteDebit: 550, compteCredit: 792, montantEuro: montantHT, contexte: 'horsCircuit' });
 
             if (typeof ajouterPIB === 'function') ajouterPIB(montantTTC);
-
             item.fait = true;
 
             try {
                 await db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/euro').set(Math.max(0, caisse.euro));
                 await syncComptabiliteToFirebase();
-            } catch(e) { console.error('Sync grande surface:', e); }
+            } catch(e) { console.error('Sync GS:', e); }
 
-            sendSystemMessage('🏪 ' + myName + ' : aucun artisan local disponible — achète ' + (c.objet||c.name) + ' en grande surface (' + fmt(montantTTC) + '€)');
-
+            sendSystemMessage('🏪 ' + myName + ' : aucun artisan local disponible — achète ' + (c.objet||c.name) + ' en grande surface (' + montantTTC.toFixed(2) + '€)');
             coursesDashboardOpen = false;
             showCoursesDashboard();
         }
@@ -4325,19 +4488,28 @@ function isAbsent(player) {
             return !!(gameConfig.COURSES_ACTIFS || CONFIG.COURSES_ACTIFS);
         }
 
-        function getListeCoursesJoueur(joueurIdx, tourIdx) {
+        // Retourne les items de la liste selon la série et le groupe
+        function getListeCoursesJoueur(joueurIdx, passagesDepart) {
             var perm = LISTES_COURSES_PERMS[Math.min(joueurIdx, 5)];
-            var groupeKey = perm[tourIdx % 3];
-            return LISTES_COURSES_GROUPES[groupeKey];
+            var grpKey = perm[passagesDepart % 3];
+            var items = LISTES_COURSES_GROUPES[grpKey];
+            var n = items.length;
+            var mid = Math.ceil(n / 2);
+            // Série 1 (passages 0-2) : 2ème moitié = petits items
+            // Série 2 (passages 3-5) : 1ère moitié = gros items
+            // Série 3 (passages 6+)  : liste complète permanente
+            if (passagesDepart >= 6) return items;
+            if (passagesDepart >= 3) return items.slice(0, mid);
+            return items.slice(mid);
         }
 
-        function initCoursesJoueur(joueurId, joueurIdx, tourIdx) {
+        function initCoursesJoueur(joueurId, joueurIdx, passagesDepart) {
             if (!coursesEtatJoueurs[joueurId]) coursesEtatJoueurs[joueurId] = {};
-            var key = 'tour_' + tourIdx;
+            var key = 'passage_' + passagesDepart; // clé unique — jamais réutilisée
             if (!coursesEtatJoueurs[joueurId][key]) {
-                var items = getListeCoursesJoueur(joueurIdx, tourIdx);
+                var items = getListeCoursesJoueur(joueurIdx, passagesDepart);
                 coursesEtatJoueurs[joueurId][key] = items.map(function(item) {
-                    return { caseId: item.caseId, montantBase: item.montantBase, fait: false, ajourné: false };
+                    return { caseId: item.caseId, montantBase: item.montantBase, fait: false };
                 });
             }
             return coursesEtatJoueurs[joueurId][key];
@@ -4375,8 +4547,17 @@ function isAbsent(player) {
             var joueurIdx = players.findIndex(function(p) { return p.id === myPlayerId; });
             if (joueurIdx < 0) joueurIdx = 0;
             var joueur = players[joueurIdx];
-            var tourIdx = (joueur.passagesDepart || 0) % 3;
-            return { items: initCoursesJoueur(myPlayerId, joueurIdx, tourIdx), joueurIdx: joueurIdx, tourIdx: tourIdx };
+            var passagesDepart = joueur.passagesDepart || 0;
+            var perm = LISTES_COURSES_PERMS[Math.min(joueurIdx, 5)];
+            var grpKey = perm[passagesDepart % 3];
+            var serie = passagesDepart >= 6 ? 3 : (passagesDepart >= 3 ? 2 : 1);
+            return {
+                items: initCoursesJoueur(myPlayerId, joueurIdx, passagesDepart),
+                joueurIdx: joueurIdx,
+                passagesDepart: passagesDepart,
+                grpKey: grpKey,
+                serie: serie
+            };
         }
 
         function showCoursesDashboard() {
@@ -4385,77 +4566,87 @@ function isAbsent(player) {
 
             var ctx = getCoursesItemsActuels();
             var items = ctx.items;
-            var tourIdx = ctx.tourIdx;
-            var perm = LISTES_COURSES_PERMS[Math.min(ctx.joueurIdx, 5)];
-            var groupeKey = perm[tourIdx % 3];
+            var serie = ctx.serie;
+            var grpKey = ctx.grpKey;
+            var serieLabel = serie === 1 ? 'Petite liste' : serie === 2 ? 'Grande liste' : 'Liste complète';
 
-            var nbFait = 0;
-            var nbAchetable = 0;
-            var totalBase = 0;
+            var nbFait = 0; var totalBase = 0;
             for (var i = 0; i < items.length; i++) {
                 totalBase += items[i].montantBase;
                 if (items[i].fait) nbFait++;
-                else if (getStatutCourseItem(items[i]) === 'achetable') nbAchetable++;
             }
 
-            var html = '<h3 style="margin:0 0 8px;text-align:center;">🛒 Ma liste de courses</h3>';
-            html += '<p style="font-size:0.85rem;color:#6b7280;text-align:center;margin:0 0 14px;">';
-            html += 'Tour ' + (tourIdx + 1) + '/3 — Groupe ' + groupeKey + ' — ' + items.length + ' achats — Total base: ' + totalBase + '€</p>';
+            var myEspoyr = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId]?.espoyr || 0);
+            var isMembre = COMPTABILITE.potAAA?.membres?.includes(myPlayerId) || playersData[myPlayerId]?.membreAAA;
+
+            var html = '<h3 style="margin:0 0 4px;text-align:center;">🛒 Ma liste de courses</h3>';
+            html += '<p style="font-size:0.82rem;color:#6b7280;text-align:center;margin:0 0 12px;">';
+            html += 'Série ' + serie + ' (' + serieLabel + ') — Groupe ' + grpKey + ' — ' + items.length + ' achats</p>';
 
             for (var j = 0; j < items.length; j++) {
                 var item = items[j];
                 var c = CASES[item.caseId];
                 var statut = getStatutCourseItem(item);
                 var act = COMPTABILITE.caisseActivites[item.caseId];
-                var montantEff = getMontantEffectifCourse(item.caseId);
-                var tvaPct = (c && c.stock && c.stock.tvaPct) ? c.stock.tvaPct : 0.21;
+                var montantEff = isStockActif() && c && c.stock ? getMontantEffectifCourse(item.caseId) : arrondir2(item.montantBase * (1 + (inflationTauxActuel || 0)));
+                var montantGS = arrondir2(montantEff * 0.9);
 
-                var borderColor = '#e5e7eb';
-                var bgColor = '#f9fafb';
-                var iconStatut = '⬜';
-                var sousTitre = '';
-                var btnHtml = '';
+                var bgColor = '#f9fafb'; var borderColor = '#e5e7eb';
+                var labelProduit = (c && c.objet) ? c.objet : (c ? c.name : 'Item ' + item.caseId);
+                var sousTitre = ''; var btns = '';
 
                 if (statut === 'fait') {
-                    bgColor = '#f0fdf4'; borderColor = '#86efac'; iconStatut = '✅';
-                    sousTitre = 'Acheté ✓';
+                    bgColor = '#f0fdf4'; borderColor = '#86efac';
+                    sousTitre = '✅ Acheté';
                 } else if (statut === 'propre') {
-                    iconStatut = '🏠'; sousTitre = 'Propre commerce';
-                } else if (statut === 'ferme') {
-                    bgColor = '#fff7ed'; borderColor = '#fed7aa'; iconStatut = '🏪';
-                    sousTitre = 'Non disponible localement';
-                    btnHtml = '<button class="btn" style="padding:6px 14px;font-size:0.85rem;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;white-space:nowrap;" onclick="acheterGrandeSurface(' + item.caseId + ')">🏪 ' + montantEff + '€</button>';
-                } else if (statut === 'rupture') {
-                    bgColor = '#fff7ed'; borderColor = '#fed7aa'; iconStatut = '🏪';
-                    sousTitre = 'Rupture locale';
-                    btnHtml = '<button class="btn" style="padding:6px 14px;font-size:0.85rem;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;white-space:nowrap;" onclick="acheterGrandeSurface(' + item.caseId + ')">🏪 ' + montantEff + '€</button>';
+                    sousTitre = '🏠 Ta boutique';
                 } else if (statut === 'achetable') {
                     bgColor = '#fffbeb'; borderColor = '#fcd34d';
-                    var proprio = act ? (playersData[act.proprietaireId] ? playersData[act.proprietaireId].name : act.proprietaireId) : '?';
-                    sousTitre = proprio + ' — TVA ' + Math.round(tvaPct * 100) + '%';
-                    btnHtml = '<button class="btn btn-primary" style="padding:6px 14px;font-size:0.85rem;white-space:nowrap;" onclick="acheterCourse(' + item.caseId + ')">🛒 ' + montantEff + '€</button>';
+                    var proprio = playersData[act.proprietaireId];
+                    var isProprioAAA = COMPTABILITE.potAAA?.membres?.includes(act.proprietaireId) || proprio?.membreAAA;
+                    var aaaLabel = isProprioAAA ? ' 🔶' : '';
+                    sousTitre = (proprio ? proprio.name : '?') + aaaLabel;
+                    if (isProprioAAA) {
+                        btns += '<button class="btn" style="padding:5px 10px;font-size:0.8rem;background:#dcfce7;color:#065f46;border:1px solid #86efac;white-space:nowrap;" onclick="acheterAAAMixCourses(' + item.caseId + ')">🟢🔶 ' + montantEff.toFixed(2) + '€</button> ';
+                    } else {
+                        btns += '<button class="btn btn-primary" style="padding:5px 10px;font-size:0.8rem;white-space:nowrap;" onclick="acheterCourse(' + item.caseId + ')">🟢 ' + montantEff.toFixed(2) + '€</button> ';
+                    }
+                    btns += '<button class="btn" style="padding:5px 10px;font-size:0.8rem;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;white-space:nowrap;" onclick="acheterGrandeSurface(' + item.caseId + ')">🏪 ' + montantGS.toFixed(2) + '€</button>';
+                } else {
+                    bgColor = '#fff7ed'; borderColor = '#fed7aa';
+                    sousTitre = statut === 'ferme' ? 'Non disponible localement' : 'Rupture locale';
+                    btns = '<button class="btn" style="padding:5px 10px;font-size:0.8rem;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;white-space:nowrap;" onclick="acheterGrandeSurface(' + item.caseId + ')">🏪 ' + montantGS.toFixed(2) + '€</button>';
                 }
 
-                html += '<div style="background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">';
-                html += '<div style="display:flex;align-items:center;gap:10px;">';
-                html += '<span style="font-size:1.3rem;">' + (c ? c.icon : '?') + '</span>';
-                var labelProduit = (c && c.stock && c.stock.vente) ? c.stock.vente : (c ? c.name : 'Activité ' + item.caseId);
-                html += '<div><div style="font-weight:700;">' + labelProduit + '</div>';
-                html += '<div style="font-size:0.8rem;color:#6b7280;">' + sousTitre + '</div></div>';
+                html += '<div style="background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;">';
+                html += '<div style="display:flex;align-items:center;gap:8px;min-width:0;">';
+                html += '<span style="font-size:1.2rem;flex-shrink:0;">' + (c ? c.icon : '?') + '</span>';
+                html += '<div style="min-width:0;"><div style="font-weight:600;font-size:0.88rem;">' + labelProduit + '</div>';
+                html += '<div style="font-size:0.76rem;color:#6b7280;">' + sousTitre + '</div></div>';
                 html += '</div>';
-                if (btnHtml) {
-                    html += '<div>' + btnHtml + '</div>';
-                } else {
-                    html += '<span style="font-size:1.3rem;">' + iconStatut + '</span>';
-                }
+                if (btns) html += '<div style="display:flex;gap:4px;flex-shrink:0;">' + btns + '</div>';
+                else if (statut === 'fait') html += '<span>✅</span>';
+                else html += '<span style="color:#9ca3af;">🏠</span>';
                 html += '</div>';
             }
 
-            html += '<div style="background:#f3f4f6;border-radius:8px;padding:8px;text-align:center;font-size:0.85rem;color:#6b7280;margin-top:4px;">';
-            html += '✅ ' + nbFait + ' fait(s) | 🛒 ' + nbAchetable + ' à faire | ' + items.length + ' total';
-            html += '</div>';
+            html += '<div style="background:#f3f4f6;border-radius:8px;padding:6px;text-align:center;font-size:0.82rem;color:#6b7280;margin-top:4px;">';
+            html += '✅ ' + nbFait + '/' + items.length + ' faits';
+            html += ' | 💰 ' + totalBase + '€ base | 🏪 GS -10%';
+            html += ' | # ' + myEspoyr.toFixed(2) + '#</div>';
 
-            showModal(html, '<button class="btn btn-primary" onclick="closeCoursesDashboard()">✅ OK — Continuer</button>');
+            // Bouton travail si membre AAA
+            var travauxActifs = (gameState?.phase || 1) >= 2 || gameState?.travauxCollectifsActifs === true;
+            var potDispo = COMPTABILITE.potAAA?.solde || 0;
+            var actionContrib = playersData[myPlayerId]?.actionContribCeTour || 0;
+            var btnTravail = '';
+            if (isMembre && travauxActifs && potDispo >= 50 && actionContrib < 2) {
+                btnTravail = '<button class="btn" style="width:100%;margin-top:8px;background:#fef9c3;color:#713f12;border:1px solid #fde68a;font-size:0.85rem;" onclick="proposerTravailCourses()">🔶 Proposer un travail pour la collectivité (+50#)</button>';
+            } else if (isMembre && !travauxActifs) {
+                btnTravail = '<p style="font-size:0.78rem;color:#6b7280;text-align:center;margin-top:6px;">🔶 Travail collectif disponible en Phase 2</p>';
+            }
+
+            showModal(html + (btnTravail || ''), '<button class="btn btn-primary" onclick="closeCoursesDashboard()">✅ Continuer</button>');
         }
 
         function closeCoursesDashboard() {
@@ -13146,6 +13337,12 @@ function initSystemeDe() {
             gameRef.child('negotiations').on('child_added', (snap) => {
                 const nego = snap.val();
                 if (nego && nego.ownerId === myPlayerId && nego.status === 'pending') {
+                    // Membre AAA : acceptation automatique du paiement mixte
+                    const isMembre = COMPTABILITE.potAAA?.membres?.includes(myPlayerId) || playersData[myPlayerId]?.membreAAA;
+                    if (isMembre && nego.type !== 'surplus') {
+                        respondToNegotiation(nego.id, true);
+                        return;
+                    }
                     if (nego.type === 'surplus') {
                         showSurplusRequestModal(nego);
                     } else {
@@ -15098,8 +15295,8 @@ function initSystemeDe() {
             var players = getOrderedPlayers();
             var joueurIdx = players.findIndex(function(p) { return p.id === bot.id; });
             if (joueurIdx < 0) joueurIdx = 0;
-            var tourIdx = (bot.passagesDepart || 0) % 3;
-            var items = initCoursesJoueur(bot.id, joueurIdx, tourIdx);
+            var passagesDepart = bot.passagesDepart || 0;
+            var items = initCoursesJoueur(bot.id, joueurIdx, passagesDepart);
             var profilId = profil.id || 'EQUILIBRE';
             var peutEmprunter = (profilId !== 'PRUDENT');
 
