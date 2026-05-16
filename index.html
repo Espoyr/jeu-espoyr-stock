@@ -1,10 +1,10 @@
- <!-- V3(9) STOCK+COURSES TEST - Build 209 - index-01 -->
+ <!-- V3(10) STOCK+COURSES TEST - Build 210 - PENALITE-L1-REFONTE -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title># ESPOYR Multijoueur V3(9) STOCK+COURSES TEST</title>
+   <title># ESPOYR Multijoueur V3(10) STOCK+COURSES TEST</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -362,7 +362,7 @@
         <!-- ÉCRAN ACCUEIL -->
         <div id="homeScreen" class="card">
             <h1><img src="logo__g1_jaune_rond.png" alt="Logo ESPOYR" style="height: 1.5em; vertical-align: middle; margin-right: 8px;">ESPOYR</h1>
-            <p class="subtitle">Jeu collaboratif d'économie - V3(9) STOCK+COURSES TEST</p>
+            <p class="subtitle">Jeu collaboratif d'économie - V3(10) STOCK+COURSES TEST</p>
             <div class="error-message" id="errorMessage"></div>
             
             <div style="margin-bottom: 15px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
@@ -4536,10 +4536,15 @@ function isAbsent(player) {
         }
 
         function getStatutCourseItem(item) {
+            return getStatutCourseItemForPlayer(item, myPlayerId);
+        }
+
+        // Build 210 : version paramétrable (utilisée côté joueur ET côté bot)
+        function getStatutCourseItemForPlayer(item, playerId) {
             if (item.fait) return 'fait';
             var act = COMPTABILITE.caisseActivites[item.caseId];
             if (!act || !act.proprietaireId) return 'ferme';
-            if (act.proprietaireId === myPlayerId) return 'propre';
+            if (act.proprietaireId === playerId) return 'propre';
             if (isStockActif()) {
                 var c = CASES[item.caseId];
                 if (c && c.stock) {
@@ -4552,8 +4557,13 @@ function isAbsent(player) {
         }
 
         function getCoursesItemsActuels() {
+            return getCoursesItemsForPlayer(myPlayerId);
+        }
+
+        // Build 210 : version paramétrable (utilisée côté joueur ET côté bot)
+        function getCoursesItemsForPlayer(playerId) {
             var players = getOrderedPlayers();
-            var joueurIdx = players.findIndex(function(p) { return p.id === myPlayerId; });
+            var joueurIdx = players.findIndex(function(p) { return p.id === playerId; });
             if (joueurIdx < 0) joueurIdx = 0;
             var joueur = players[joueurIdx];
             var passagesDepart = joueur.passagesDepart || 0;
@@ -4561,7 +4571,7 @@ function isAbsent(player) {
             var grpKey = perm[passagesDepart % 3];
             var serie = passagesDepart >= 6 ? 3 : (passagesDepart >= 3 ? 2 : 1);
             return {
-                items: initCoursesJoueur(myPlayerId, joueurIdx, passagesDepart),
+                items: initCoursesJoueur(playerId, joueurIdx, passagesDepart),
                 joueurIdx: joueurIdx,
                 passagesDepart: passagesDepart,
                 grpKey: grpKey,
@@ -10984,43 +10994,115 @@ function initSystemeDe() {
                 arrieresResult = await payerArrieres(myPlayerId);
             }
 
-            // ========== 9. PÉNALITÉ COURSES NON FAITES ==========
-            let coursesPenaliteTotal = 0;
-            let coursesPenaliteItems = [];
+            // ========== 9. PÉNALITÉ COURSES NON FAITES (Build 210 — refonte) ==========
+            // Règle :
+            //   - Item non acheté pendant le tour → prélèvement forcé au passage Ligne 1.
+            //   - Part « achat de base » (×1.00) : prix local TTC complet, va à HORS_CIRCUIT.
+            //   - Part « pénalité » (×0.10 du HT, SANS TVA) : convertie au taux 1#=1€
+            //     puis émise au Pot AAA (avec traçabilité bidirectionnelle).
+            //   - Statuts exclus : 'fait' (déjà acheté) et 'propre' (commerce du joueur).
+            //   - TVA correctement comptabilisée (corrige bug Build 209 — TVA prélevée
+            //     mais non enregistrée au ledger).
+            let coursesPenaliteTotal = 0;       // Total drainé sur caisse € (base TTC + pénalité €)
+            let coursesPenaliteHashTotal = 0;    // Total # créés au Pot AAA
+            let coursesPenaliteItems = [];       // Détail par item (pour la modale)
             if (isCoursesActif()) {
                 var ctxL1 = getCoursesItemsActuels();
                 for (var ci = 0; ci < ctxL1.items.length; ci++) {
                     var itL1 = ctxL1.items[ci];
-                    if (itL1.fait) continue;
+                    var statutL1 = getStatutCourseItem(itL1);
+                    if (statutL1 === 'fait' || statutL1 === 'propre') continue;
                     var cL1 = CASES[itL1.caseId];
                     if (!cL1) continue;
-                    var montantL1 = arrondir2(itL1.montantBase * (1 + (inflationTauxActuel || 0)));
-                    if (isStockActif() && cL1.stock) montantL1 = getMontantEffectifCourse(itL1.caseId);
+
+                    // === Calcul des montants ===
+                    var baseTtcL1 = arrondir2(itL1.montantBase * (1 + (inflationTauxActuel || 0)));
+                    if (isStockActif() && cL1.stock) baseTtcL1 = getMontantEffectifCourse(itL1.caseId);
                     var tvaPctL1 = (cL1.stock && cL1.stock.tvaPct) ? cL1.stock.tvaPct : 0.21;
-                    var tvaL1 = arrondir2(montantL1 * tvaPctL1 / (1 + tvaPctL1));
-                    var htL1 = arrondir2(montantL1 - tvaL1);
+                    var tvaL1 = arrondir2(baseTtcL1 * tvaPctL1 / (1 + tvaPctL1));
+                    var htL1 = arrondir2(baseTtcL1 - tvaL1);
+                    var penaliteEuroL1 = arrondir2(htL1 * 0.10);       // 10% du HT, sans TVA
+                    var penaliteHashL1 = arrondirHash(penaliteEuroL1); // Taux 1#=1€ (arrondi 0.5)
+                    var totalPreleveL1 = arrondir2(baseTtcL1 + penaliteEuroL1);
 
-                    // Payer si possible
-                    var payeL1 = arrondir2(Math.min(montantL1, Math.max(0, caisse.euro)));
-                    caisse.euro = arrondir2((caisse.euro || 0) - payeL1);
+                    // === Prélèvement caisse joueur (best effort) ===
+                    var prelevL1 = arrondir2(Math.min(totalPreleveL1, Math.max(0, caisse.euro)));
+                    caisse.euro = arrondir2((caisse.euro || 0) - prelevL1);
 
-                    // Créditer importation
+                    // === ÉCRITURE 1 — Achat de base : HT + TVA → caisse joueur ===
+                    if (htL1 > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Import Ligne 1 base ' + (cL1.terme || cL1.name),
+                            compteDebit: 613, compteCredit: 500,
+                            montantEuro: htL1,
+                            contexte: 'horsCircuit'
+                        });
+                    }
+                    if (tvaL1 > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'TVA Import Ligne 1 ' + (cL1.terme || cL1.name) + ' ' + Math.round(tvaPctL1 * 100) + '%',
+                            compteDebit: 635, compteCredit: 500,
+                            montantEuro: tvaL1,
+                            contexte: 'horsCircuit'
+                        });
+                    }
+
+                    // === ÉCRITURE 2 — Recette HORS_CIRCUIT ===
                     COMPTABILITE.horsCircuit = COMPTABILITE.horsCircuit || { solde: 0, recettes: 0, journal: [] };
                     COMPTABILITE.horsCircuit.solde = arrondir2((COMPTABILITE.horsCircuit.solde || 0) + htL1);
                     COMPTABILITE.horsCircuit.recettes = arrondir2((COMPTABILITE.horsCircuit.recettes || 0) + htL1);
                     if (!COMPTABILITE.horsCircuit.grandLivre) COMPTABILITE.horsCircuit.grandLivre = { 550: 0, 792: 0 };
                     COMPTABILITE.horsCircuit.grandLivre[550] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[550] || 0) + htL1);
                     COMPTABILITE.horsCircuit.grandLivre[792] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[792] || 0) + htL1);
+                    enregistrerEcriture({
+                        joueurId: 'HORS_CIRCUIT',
+                        libelle: 'Recette import Ligne 1 ' + (cL1.terme || cL1.name),
+                        compteDebit: 550, compteCredit: 792,
+                        montantEuro: htL1,
+                        contexte: 'horsCircuit'
+                    });
 
-                    enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Pénalité grande surface ' + (cL1.terme||cL1.name), compteDebit: 613, compteCredit: 500, montantEuro: htL1, contexte: 'horsCircuit' });
-                    enregistrerEcriture({ joueurId: 'HORS_CIRCUIT', libelle: 'Import pénalité ' + (cL1.terme||cL1.name), compteDebit: 550, compteCredit: 792, montantEuro: htL1, contexte: 'horsCircuit' });
+                    // === ÉCRITURE 3 — Conversion € → # (charge joueur, SANS TVA) ===
+                    if (penaliteEuroL1 > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Pénalité courses non faites ' + (cL1.terme || cL1.name) + ' +10%',
+                            compteDebit: 658, compteCredit: 500,
+                            montantEuro: penaliteEuroL1,
+                            contexte: 'penalite_courses_l1',
+                            details: { destination: 'POT_AAA', taux: 1.0, montantHashCree: penaliteHashL1 }
+                        });
+                    }
+
+                    // === ÉCRITURE 4 — Émission # au Pot AAA (avec traçabilité € d'origine) ===
+                    if (penaliteHashL1 > 0) {
+                        COMPTABILITE.potAAA = COMPTABILITE.potAAA || { solde: 0, circulationHash: 0, membres: [], creances: {}, journal: [] };
+                        COMPTABILITE.potAAA.solde = arrondirHash((COMPTABILITE.potAAA.solde || 0) + penaliteHashL1);
+                        enregistrerEcriture({
+                            joueurId: 'POT_AAA',
+                            libelle: 'Émission # depuis pénalité ' + myName + ' / ' + (cL1.terme || cL1.name),
+                            compteDebit: 580, compteCredit: 135,
+                            montantEspoyr: penaliteHashL1,
+                            contexte: 'penalite_courses_l1',
+                            details: { sourceJoueur: myPlayerId, montantEuroOrigine: penaliteEuroL1, taux: 1.0 }
+                        });
+                    }
 
                     itL1.fait = true;
-                    coursesPenaliteTotal = arrondir2(coursesPenaliteTotal + payeL1);
-                    coursesPenaliteItems.push({ nom: cL1.objet || cL1.name, montant: payeL1 });
+                    coursesPenaliteTotal = arrondir2(coursesPenaliteTotal + prelevL1);
+                    coursesPenaliteHashTotal = arrondirHash(coursesPenaliteHashTotal + penaliteHashL1);
+                    coursesPenaliteItems.push({
+                        nom: cL1.objet || cL1.name,
+                        montant: prelevL1,            // total drainé (compat modale actuelle)
+                        montantBase: baseTtcL1,       // pour enrichissement modale (hunk suivant)
+                        penalite: penaliteEuroL1,
+                        penaliteHash: penaliteHashL1
+                    });
                 }
                 if (coursesPenaliteTotal > 0) {
-                    sendSystemMessage('🏪 ' + myName + ' : courses non faites → grande surface forcée −' + fmt(coursesPenaliteTotal) + '€ → Importation');
+                    sendSystemMessage('🏪 ' + myName + ' : courses non faites → import +10% au profit du Pot AAA (−' + fmt(coursesPenaliteTotal) + '€, +' + fmt(coursesPenaliteHashTotal) + '#)');
                 }
             }
             
@@ -11237,16 +11319,26 @@ function initSystemeDe() {
                     </div>`;
             }
 
-            // --- Pénalité courses non faites ---
+            // --- Pénalité courses non faites (Build 210 — refonte) ---
             if (coursesPenaliteTotal > 0) {
+                const detailItemsL1 = coursesPenaliteItems.map(i => {
+                    const baseTxt = fmt(i.montantBase !== undefined ? i.montantBase : i.montant);
+                    const penTxt = (i.penalite > 0) ? ' + ' + fmt(i.penalite) + '€ pén.' : '';
+                    return i.nom + ' (' + baseTxt + '€' + penTxt + ')';
+                }).join(' · ');
                 modalHtml += `
-                    <div style="background:#fff7ed;padding:8px;border-radius:8px;margin-bottom:8px;border:1px solid #fed7aa;">
-                        <div style="display:flex;justify-content:space-between;">
-                            <span style="font-weight:bold;color:#c2410c;">🏪 Courses non faites → Grande surface</span>
-                            <span style="font-weight:600;color:#c2410c;">-${fmt(coursesPenaliteTotal)}€</span>
+                    <div style="background:#fff7ed;padding:10px;border-radius:8px;margin-bottom:8px;border:1px solid #fed7aa;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-weight:bold;color:#c2410c;">🏪 Courses non faites → Import Ligne 1</span>
+                            <span style="font-weight:bold;color:#c2410c;font-size:1.05rem;">-${fmt(coursesPenaliteTotal)}€</span>
                         </div>
-                        <p style="margin:4px 0 0;font-size:0.8rem;color:#9a3412;">
-                            ${coursesPenaliteItems.map(i => i.nom + ' ('+fmt(i.montant)+'€)').join(' · ')} → Importation
+                        ${coursesPenaliteHashTotal > 0 ? `
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:6px;border-top:1px dashed #fed7aa;">
+                            <span style="font-size:0.85rem;color:#9a3412;">${LOGO_AAA} dont pénalité +10% → Pot AAA</span>
+                            <span style="font-weight:600;color:#059669;font-size:0.95rem;">+${fmt(coursesPenaliteHashTotal)}#</span>
+                        </div>` : ''}
+                        <p style="margin:6px 0 0;font-size:0.78rem;color:#9a3412;">
+                            ${detailItemsL1}
                         </p>
                     </div>`;
             }
@@ -15541,7 +15633,7 @@ function initSystemeDe() {
                 var item = items[i];
                 if (item.fait) continue;
 
-                var statut = getStatutCourseItem(item);
+                var statut = getStatutCourseItemForPlayer(item, bot.id);
 
                 // Grande surface pour ferme/rupture
                 if (statut === 'ferme' || statut === 'rupture') {
@@ -15940,6 +16032,107 @@ function initSystemeDe() {
                 if ((caisse.impaye || 0) > 0 || (caisse.impayeEtat || 0) > 0) {
                     const botArrResult = await payerArrieres(bot.id);
                     // Les messages détaillés sont envoyés dans payerArrieres
+                }
+                
+                // ========== PÉNALITÉ COURSES NON FAITES (BOT) — Build 210 ==========
+                // Symétrique du bloc joueur humain dans handleSalary.
+                // Règle : item non acheté pendant le tour → prélèvement forcé ×1.10
+                //   - Base TTC (×1.00) vers HORS_CIRCUIT, avec TVA correctement comptabilisée
+                //   - Pénalité (×0.10 du HT, sans TVA) convertie 1#=1€ et émise au Pot AAA
+                if (isCoursesActif()) {
+                    var ctxBotL1 = getCoursesItemsForPlayer(bot.id);
+                    var botPenaliteTotal = 0;
+                    var botPenaliteHashTotal = 0;
+                    for (var ciBot = 0; ciBot < ctxBotL1.items.length; ciBot++) {
+                        var itBotL1 = ctxBotL1.items[ciBot];
+                        var statutBotL1 = getStatutCourseItemForPlayer(itBotL1, bot.id);
+                        if (statutBotL1 === 'fait' || statutBotL1 === 'propre') continue;
+                        var cBotL1 = CASES[itBotL1.caseId];
+                        if (!cBotL1) continue;
+                        
+                        // === Calcul des montants ===
+                        var baseTtcBotL1 = arrondir2(itBotL1.montantBase * (1 + (inflationTauxActuel || 0)));
+                        if (isStockActif() && cBotL1.stock) baseTtcBotL1 = getMontantEffectifCourse(itBotL1.caseId);
+                        var tvaPctBotL1 = (cBotL1.stock && cBotL1.stock.tvaPct) ? cBotL1.stock.tvaPct : 0.21;
+                        var tvaBotL1 = arrondir2(baseTtcBotL1 * tvaPctBotL1 / (1 + tvaPctBotL1));
+                        var htBotL1 = arrondir2(baseTtcBotL1 - tvaBotL1);
+                        var penaliteEuroBotL1 = arrondir2(htBotL1 * 0.10);
+                        var penaliteHashBotL1 = arrondirHash(penaliteEuroBotL1);
+                        var totalPreleveBotL1 = arrondir2(baseTtcBotL1 + penaliteEuroBotL1);
+                        
+                        // === Prélèvement caisse bot (best effort) ===
+                        var prelevBotL1 = arrondir2(Math.min(totalPreleveBotL1, Math.max(0, caisse.euro)));
+                        caisse.euro = arrondir2((caisse.euro || 0) - prelevBotL1);
+                        
+                        // === ÉCRITURE 1 — Achat de base : HT + TVA ===
+                        if (htBotL1 > 0) {
+                            enregistrerEcriture({
+                                joueurId: bot.id,
+                                libelle: 'Import Ligne 1 base ' + (cBotL1.terme || cBotL1.name),
+                                compteDebit: 613, compteCredit: 500,
+                                montantEuro: htBotL1,
+                                contexte: 'horsCircuit'
+                            });
+                        }
+                        if (tvaBotL1 > 0) {
+                            enregistrerEcriture({
+                                joueurId: bot.id,
+                                libelle: 'TVA Import Ligne 1 ' + (cBotL1.terme || cBotL1.name) + ' ' + Math.round(tvaPctBotL1 * 100) + '%',
+                                compteDebit: 635, compteCredit: 500,
+                                montantEuro: tvaBotL1,
+                                contexte: 'horsCircuit'
+                            });
+                        }
+                        
+                        // === ÉCRITURE 2 — Recette HORS_CIRCUIT ===
+                        COMPTABILITE.horsCircuit = COMPTABILITE.horsCircuit || { solde: 0, recettes: 0, journal: [] };
+                        COMPTABILITE.horsCircuit.solde = arrondir2((COMPTABILITE.horsCircuit.solde || 0) + htBotL1);
+                        COMPTABILITE.horsCircuit.recettes = arrondir2((COMPTABILITE.horsCircuit.recettes || 0) + htBotL1);
+                        if (!COMPTABILITE.horsCircuit.grandLivre) COMPTABILITE.horsCircuit.grandLivre = { 550: 0, 792: 0 };
+                        COMPTABILITE.horsCircuit.grandLivre[550] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[550] || 0) + htBotL1);
+                        COMPTABILITE.horsCircuit.grandLivre[792] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[792] || 0) + htBotL1);
+                        enregistrerEcriture({
+                            joueurId: 'HORS_CIRCUIT',
+                            libelle: 'Recette import Ligne 1 ' + (cBotL1.terme || cBotL1.name),
+                            compteDebit: 550, compteCredit: 792,
+                            montantEuro: htBotL1,
+                            contexte: 'horsCircuit'
+                        });
+                        
+                        // === ÉCRITURE 3 — Conversion € → # (charge bot, SANS TVA) ===
+                        if (penaliteEuroBotL1 > 0) {
+                            enregistrerEcriture({
+                                joueurId: bot.id,
+                                libelle: 'Pénalité courses non faites ' + (cBotL1.terme || cBotL1.name) + ' +10%',
+                                compteDebit: 658, compteCredit: 500,
+                                montantEuro: penaliteEuroBotL1,
+                                contexte: 'penalite_courses_l1',
+                                details: { destination: 'POT_AAA', taux: 1.0, montantHashCree: penaliteHashBotL1 }
+                            });
+                        }
+                        
+                        // === ÉCRITURE 4 — Émission # au Pot AAA ===
+                        if (penaliteHashBotL1 > 0) {
+                            COMPTABILITE.potAAA = COMPTABILITE.potAAA || { solde: 0, circulationHash: 0, membres: [], creances: {}, journal: [] };
+                            COMPTABILITE.potAAA.solde = arrondirHash((COMPTABILITE.potAAA.solde || 0) + penaliteHashBotL1);
+                            enregistrerEcriture({
+                                joueurId: 'POT_AAA',
+                                libelle: 'Émission # depuis pénalité ' + bot.name + ' / ' + (cBotL1.terme || cBotL1.name),
+                                compteDebit: 580, compteCredit: 135,
+                                montantEspoyr: penaliteHashBotL1,
+                                contexte: 'penalite_courses_l1',
+                                details: { sourceJoueur: bot.id, montantEuroOrigine: penaliteEuroBotL1, taux: 1.0 }
+                            });
+                        }
+                        
+                        itBotL1.fait = true;
+                        botPenaliteTotal = arrondir2(botPenaliteTotal + prelevBotL1);
+                        botPenaliteHashTotal = arrondirHash(botPenaliteHashTotal + penaliteHashBotL1);
+                    }
+                    if (botPenaliteTotal > 0) {
+                        await db.ref(`parties/${currentGameCode}/players/${bot.id}/euro`).set(caisse.euro);
+                        sendSystemMessage('🤖🏪 ' + bot.name + ' : courses non faites → import +10% au profit du Pot AAA (−' + fmt(botPenaliteTotal) + '€, +' + fmt(botPenaliteHashTotal) + '#)');
+                    }
                 }
                 
                 await syncComptabiliteToFirebase();
