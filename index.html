@@ -1,4 +1,4 @@
- <!-- V3(12) STOCK+COURSES TEST - Build 212 - GESTION-BOTS-MVP -->
+ <!-- V3(12) STOCK+COURSES TEST - Build 212.1 - GESTION-BOTS-MVP+HOTFIX -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -9281,6 +9281,13 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 updates['parties/' + currentGameCode + '/players/' + botId + '/botProfil'] = newProfil;
                 await db.ref().update(updates);
                 
+                // Mise à jour locale immédiate (le listener Firebase étant async)
+                if (playersData[botId]) {
+                    playersData[botId].name = newName;
+                    playersData[botId].avatar = newAvatar;
+                    playersData[botId].botProfil = newProfil;
+                }
+                
                 const profLib = PROFILS_IA[newProfil] ? PROFILS_IA[newProfil].nom : newProfil;
                 sendSystemMessage('✏️ Bot modifié : ' + newAvatar + ' ' + newName + ' (' + profLib + ')');
                 closeModal();
@@ -9306,6 +9313,9 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
             try {
                 // 1) Retirer de Firebase
                 await db.ref('parties/' + currentGameCode + '/players/' + botId).remove();
+                
+                // Suppression locale immédiate (le listener Firebase étant async)
+                if (playersData[botId]) delete playersData[botId];
                 
                 // 2) Nettoyage comptable local
                 if (COMPTABILITE.caisseJoueurs && COMPTABILITE.caisseJoueurs[botId]) {
