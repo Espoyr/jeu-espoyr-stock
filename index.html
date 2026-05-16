@@ -1,10 +1,10 @@
- <!-- V3(11) STOCK+COURSES TEST - Build 211 - CORR-PASSAGE-DECALE -->
+ <!-- V3(12) STOCK+COURSES TEST - Build 212 - GESTION-BOTS-MVP -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title># ESPOYR Multijoueur V3(11) STOCK+COURSES TEST</title>
+   <title># ESPOYR Multijoueur V3(12) STOCK+COURSES TEST</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -362,7 +362,7 @@
         <!-- ÉCRAN ACCUEIL -->
         <div id="homeScreen" class="card">
             <h1><img src="logo__g1_jaune_rond.png" alt="Logo ESPOYR" style="height: 1.5em; vertical-align: middle; margin-right: 8px;">ESPOYR</h1>
-            <p class="subtitle">Jeu collaboratif d'économie - V3(11) STOCK+COURSES TEST</p>
+            <p class="subtitle">Jeu collaboratif d'économie - V3(12) STOCK+COURSES TEST</p>
             <div class="error-message" id="errorMessage"></div>
             
             <div style="margin-bottom: 15px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
@@ -9158,21 +9158,176 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
             showScreen('homeScreen');
         }
         
-        // ========== ROBOTS IA ==========
+        // ========== ROBOTS IA — Build 212 refonte : gestion complète ==========
         function showAddBotModal() {
-            if (Object.keys(playersData).length >= 6) { alert('Partie complète (6 joueurs max) !'); return; }
+            const bots = Object.values(playersData).filter(p => p && p.isBot);
+            const inGame = !!(gameState && gameState.started);
             
-            const profilsList = Object.values(PROFILS_IA).map(p => 
-                `<button class="btn" style="margin: 3px; font-size: 0.8rem;" onclick="addBot('${p.id}')">${p.nom}</button>`
-            ).join('');
+            let html = '<h3>👥 Gestion des joueurs complémentaires</h3>';
             
-            showModal(`<h3>👥 Joueur complémentaire</h3>
-                <div style="margin-bottom:10px;">
-                    <button class="btn btn-primary" style="width:100%; margin-bottom:8px; font-size:0.95rem;" onclick="addBot('ALEATOIRE')">🎲 Aléatoire</button>
-                </div>
-                <p style="font-size:0.8rem; color:#6b7280; margin-bottom:6px;">Ou choisir un comportement :</p>
-                <div style="display:flex;flex-wrap:wrap;">${profilsList}</div>`,
-                `<button class="btn btn-secondary" onclick="closeModal()">Annuler</button>`);
+            // --- Liste des bots existants ---
+            if (bots.length > 0) {
+                html += '<p style="font-size:0.85rem;color:#6b7280;margin:8px 0 4px 0;"><strong>🤖 Bots actuels (' + bots.length + ') :</strong></p>';
+                bots.forEach(b => {
+                    const profilLib = PROFILS_IA[b.botProfil] ? PROFILS_IA[b.botProfil].nom : (b.botProfil || '?');
+                    const profEco = b.profil === 'creatif' ? '🎨 Créatif' : '🏛️ Contributif';
+                    const aaa = b.membreAAA ? ' ' + LOGO_AAA : '';
+                    html += '<div style="background:#f9fafb;padding:8px;border-radius:6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;border:1px solid #e5e7eb;">';
+                    html += '<div style="flex:1;font-size:0.88rem;">';
+                    html += '<div style="font-weight:600;">' + (b.avatar || '🤖') + ' ' + (b.name || '?') + aaa + '</div>';
+                    html += '<div style="font-size:0.78rem;color:#6b7280;">' + profilLib + ' · ' + profEco + '</div>';
+                    html += '</div>';
+                    html += '<div style="display:flex;gap:4px;">';
+                    html += '<button class="btn" style="font-size:0.75rem;padding:5px 10px;" onclick="editBotModal(\'' + b.id + '\')" title="Modifier">✏️</button>';
+                    if (!inGame) {
+                        html += '<button class="btn" style="font-size:0.75rem;padding:5px 10px;background:#fee2e2;color:#dc2626;" onclick="removeBot(\'' + b.id + '\')" title="Supprimer">🗑️</button>';
+                    }
+                    html += '</div></div>';
+                });
+                if (inGame) {
+                    html += '<p style="font-size:0.72rem;color:#9ca3af;margin:4px 0 10px 0;">🛡️ Suppression désactivée en cours de partie (préserve l\'intégrité comptable).</p>';
+                }
+            }
+            
+            // --- Ajout d'un nouveau bot ---
+            if (Object.keys(playersData).length < 6) {
+                html += '<p style="font-size:0.85rem;color:#6b7280;margin:12px 0 4px 0;"><strong>➕ Ajouter un bot :</strong></p>';
+                html += '<div style="margin-bottom:8px;">';
+                html += '<button class="btn btn-primary" style="width:100%;margin-bottom:6px;font-size:0.9rem;" onclick="addBot(\'ALEATOIRE\')">🎲 Aléatoire</button>';
+                html += '</div>';
+                html += '<p style="font-size:0.78rem;color:#6b7280;margin-bottom:4px;">Ou choisir un comportement :</p>';
+                html += '<div style="display:flex;flex-wrap:wrap;">';
+                Object.values(PROFILS_IA).forEach(p => {
+                    html += '<button class="btn" style="margin:3px;font-size:0.78rem;" onclick="addBot(\'' + p.id + '\')">' + p.nom + '</button>';
+                });
+                html += '</div>';
+            } else {
+                html += '<p style="font-size:0.85rem;color:#dc2626;margin:12px 0;">⚠️ Partie complète (6 joueurs max).</p>';
+            }
+            
+            showModal(html, '<button class="btn btn-secondary" onclick="closeModal()">Fermer</button>');
+        }
+        
+        // Build 212 — Modale d'édition d'un bot
+        function editBotModal(botId) {
+            const bot = playersData[botId];
+            if (!bot) { closeModal(); return; }
+            
+            const tousAv = ['🏠','🚗','⚡','🐢','🌿','👽','😺','🔧'];
+            const avPris = Object.values(playersData).filter(p => p && p.id !== botId).map(p => p.avatar).filter(Boolean);
+            var avDispo = tousAv.filter(a => !avPris.includes(a));
+            if (bot.avatar && !avDispo.includes(bot.avatar)) avDispo.push(bot.avatar);
+            
+            let html = '<h3>✏️ Modifier ' + (bot.avatar || '🤖') + ' ' + (bot.name || '') + '</h3>';
+            html += '<div style="display:grid;gap:10px;">';
+            
+            html += '<div>';
+            html += '<label style="font-size:0.85rem;font-weight:bold;">Nom</label>';
+            html += '<input type="text" id="editBotName" value="' + (bot.name || '').replace(/"/g, '&quot;') + '" maxlength="20" style="width:100%;padding:8px;margin-top:4px;">';
+            html += '</div>';
+            
+            html += '<div>';
+            html += '<label style="font-size:0.85rem;font-weight:bold;">Avatar</label>';
+            html += '<select id="editBotAvatar" style="width:100%;padding:8px;margin-top:4px;font-size:1.2rem;">';
+            avDispo.forEach(a => {
+                html += '<option value="' + a + '"' + (a === bot.avatar ? ' selected' : '') + '>' + a + '</option>';
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            html += '<div>';
+            html += '<label style="font-size:0.85rem;font-weight:bold;">Profil IA (comportement)</label>';
+            html += '<select id="editBotProfil" style="width:100%;padding:8px;margin-top:4px;">';
+            Object.values(PROFILS_IA).forEach(p => {
+                html += '<option value="' + p.id + '"' + (p.id === bot.botProfil ? ' selected' : '') + '>' + p.nom + '</option>';
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            html += '</div>';
+            
+            const inGame = !!(gameState && gameState.started);
+            if (inGame) {
+                html += '<p style="font-size:0.75rem;color:#9ca3af;margin-top:10px;">🛡️ Profil économique et appartenance AAA non modifiables en cours de partie.</p>';
+            }
+            
+            showModal(html, 
+                '<button class="btn btn-secondary" onclick="showAddBotModal()">Annuler</button>' +
+                '<button class="btn btn-primary" onclick="saveBotEdits(\'' + botId + '\')" style="margin-left:8px;">✅ Enregistrer</button>'
+            );
+        }
+        
+        // Build 212 — Enregistrer les modifications d'un bot
+        async function saveBotEdits(botId) {
+            const newName = (document.getElementById('editBotName').value || '').trim();
+            const newAvatar = document.getElementById('editBotAvatar').value;
+            const newProfil = document.getElementById('editBotProfil').value;
+            
+            if (!newName) { alert('Le nom ne peut pas être vide.'); return; }
+            
+            // Vérification doublon de nom (insensible à la casse)
+            const autresNoms = Object.values(playersData)
+                .filter(p => p && p.id !== botId)
+                .map(p => (p.name || '').toLowerCase());
+            if (autresNoms.includes(newName.toLowerCase())) {
+                alert('Ce nom est déjà utilisé par un autre joueur.');
+                return;
+            }
+            
+            try {
+                const updates = {};
+                updates['parties/' + currentGameCode + '/players/' + botId + '/name'] = newName;
+                updates['parties/' + currentGameCode + '/players/' + botId + '/avatar'] = newAvatar;
+                updates['parties/' + currentGameCode + '/players/' + botId + '/botProfil'] = newProfil;
+                await db.ref().update(updates);
+                
+                const profLib = PROFILS_IA[newProfil] ? PROFILS_IA[newProfil].nom : newProfil;
+                sendSystemMessage('✏️ Bot modifié : ' + newAvatar + ' ' + newName + ' (' + profLib + ')');
+                closeModal();
+                setTimeout(function() { showAddBotModal(); }, 200);
+            } catch(e) {
+                console.error('Erreur saveBotEdits:', e);
+                alert('Erreur lors de l\'enregistrement.');
+            }
+        }
+        
+        // Build 212 — Suppression d'un bot (lobby uniquement)
+        async function removeBot(botId) {
+            const bot = playersData[botId];
+            if (!bot) return;
+            
+            if (gameState && gameState.started) {
+                alert('Suppression désactivée en cours de partie pour préserver l\'intégrité comptable.');
+                return;
+            }
+            
+            if (!confirm('Supprimer le bot ' + (bot.avatar || '🤖') + ' ' + (bot.name || '') + ' ?')) return;
+            
+            try {
+                // 1) Retirer de Firebase
+                await db.ref('parties/' + currentGameCode + '/players/' + botId).remove();
+                
+                // 2) Nettoyage comptable local
+                if (COMPTABILITE.caisseJoueurs && COMPTABILITE.caisseJoueurs[botId]) {
+                    delete COMPTABILITE.caisseJoueurs[botId];
+                }
+                if (COMPTABILITE.parJoueur && COMPTABILITE.parJoueur[botId]) {
+                    delete COMPTABILITE.parJoueur[botId];
+                }
+                if (COMPTABILITE.potAAA && COMPTABILITE.potAAA.membres) {
+                    COMPTABILITE.potAAA.membres = COMPTABILITE.potAAA.membres.filter(id => id !== botId);
+                }
+                
+                // 3) Sync
+                await syncComptabiliteToFirebase();
+                
+                sendSystemMessage('🗑️ Bot supprimé : ' + (bot.avatar || '🤖') + ' ' + (bot.name || ''));
+                closeModal();
+                setTimeout(function() { showAddBotModal(); }, 200);
+            } catch(e) {
+                console.error('Erreur removeBot:', e);
+                alert('Erreur lors de la suppression.');
+            }
         }
         
         // ========== CONFIGURATION PARTIE ==========
@@ -15453,7 +15608,7 @@ function initSystemeDe() {
             const recettesMoyennes = calculerRecettesMoyennesEtat();
             
             // Spirale détectée si intérêts > recettes moyennes
-            if (interetsPrevus > recettesMoyennes && dette > 500 && !spiraleModalShown) {
+            if (interetsPrevus > recettesMoyennes && dette > 500 && (gameState.turn || 1) >= 3 && !spiraleModalShown) {
                 spiraleModalShown = true;
                 
                 // Journal État
