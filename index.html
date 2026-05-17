@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213.3 - EQUIP-HINT-CONFIG -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.4 - INVITE-LINK -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -425,6 +425,8 @@
                 <div style="font-size: 0.85rem; color: #92400e; margin-bottom: 4px;">Code de la partie :</div>
                 <div class="code" id="lobbyCode">------</div>
             </div>
+            <!-- Build 213.4 — Bouton d'invitation -->
+            <button class="btn btn-full" style="background:#dbeafe; color:#1d4ed8; margin: 8px 0; font-weight: 600;" onclick="showInviteModal()">📤 Inviter des joueurs (lien à partager)</button>
             <h3 style="color: var(--gray); margin-bottom: 8px; font-size: 0.95rem;">Joueurs (<span id="playerCount">0</span>/4)</h3>
             <div class="players-list" id="lobbyPlayers"></div>
             <div id="hostControls" class="hidden" style="margin-top: 15px;">
@@ -3393,7 +3395,130 @@
             }
         }
         
-        /**
+        // ═══════════════════════════════════════════════════════════════
+        // MODULE INVITATION — Build 213.4
+        // Permet de partager le lien de la partie par mail/WhatsApp/etc.
+        // ═══════════════════════════════════════════════════════════════
+        
+        function buildInviteLink() {
+            // Reconstruit l'URL de base + ?join=CODE
+            const base = window.location.origin + window.location.pathname;
+            return base + '?join=' + (currentGameCode || '');
+        }
+        
+        function buildInviteMessage() {
+            const code = currentGameCode || '------';
+            const lien = buildInviteLink();
+            return 'Rejoins-moi sur ESPOYR !\n\n' +
+                   'Code de la partie : ' + code + '\n' +
+                   'Lien direct : ' + lien + '\n\n' +
+                   'Clique sur le lien, entre ton prénom et joue 🎮';
+        }
+        
+        function showInviteModal() {
+            if (!currentGameCode) {
+                showError('Pas de code de partie disponible.');
+                return;
+            }
+            const lien = buildInviteLink();
+            const message = buildInviteMessage();
+            const hasWebShare = !!(navigator.share);
+            
+            showModal(
+                '<h3>📤 Inviter des joueurs</h3>' +
+                '<div style="background:#fef3c7;padding:10px;border-radius:8px;margin:10px 0;">' +
+                  '<p style="margin:0;font-size:0.85rem;color:#92400e;">Code de la partie :</p>' +
+                  '<p style="margin:4px 0 0;font-size:1.4rem;font-weight:bold;letter-spacing:3px;font-family:monospace;">' + currentGameCode + '</p>' +
+                '</div>' +
+                '<div style="margin:10px 0;">' +
+                  '<label style="font-size:0.85rem;font-weight:bold;">🔗 Lien direct (partageable) :</label>' +
+                  '<div style="display:flex;gap:6px;margin-top:4px;">' +
+                    '<input type="text" id="inviteLinkInput" value="' + lien + '" readonly style="flex:1;padding:6px;font-size:0.78rem;font-family:monospace;background:#f9fafb;border:1px solid #d1d5db;border-radius:6px;">' +
+                    '<button class="btn" style="background:#e0e7ff;color:#4338ca;padding:6px 10px;font-size:0.85rem;" onclick="copyInviteLink()" title="Copier le lien">📋</button>' +
+                  '</div>' +
+                '</div>' +
+                '<div style="margin:10px 0;">' +
+                  '<label style="font-size:0.85rem;font-weight:bold;">✉️ Message à envoyer (modifiable) :</label>' +
+                  '<textarea id="inviteMessage" rows="6" style="width:100%;padding:8px;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;margin-top:4px;resize:vertical;">' + message + '</textarea>' +
+                '</div>' +
+                '<div style="margin:12px 0;">' +
+                  '<p style="font-size:0.85rem;font-weight:bold;margin-bottom:6px;">Partager via :</p>' +
+                  '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+                    '<button class="btn" style="flex:1;min-width:90px;background:#fee2e2;color:#dc2626;font-size:0.85rem;padding:8px;" onclick="inviteViaEmail()">📧 Email</button>' +
+                    '<button class="btn" style="flex:1;min-width:90px;background:#dcfce7;color:#16a34a;font-size:0.85rem;padding:8px;" onclick="inviteViaWhatsApp()">💬 WhatsApp</button>' +
+                    (hasWebShare ? '<button class="btn" style="flex:1;min-width:90px;background:#dbeafe;color:#2563eb;font-size:0.85rem;padding:8px;" onclick="inviteViaWebShare()">📲 Partager...</button>' : '') +
+                    '<button class="btn" style="flex:1;min-width:90px;background:#fef3c7;color:#92400e;font-size:0.85rem;padding:8px;" onclick="copyInviteMessage()">📋 Copier message</button>' +
+                  '</div>' +
+                '</div>',
+                '<button class="btn btn-secondary" onclick="closeModal()">Fermer</button>'
+            );
+        }
+        
+        async function copyInviteLink() {
+            const inp = document.getElementById('inviteLinkInput');
+            if (!inp) return;
+            try {
+                await navigator.clipboard.writeText(inp.value);
+                sendSystemMessage('🔗 Lien copié dans le presse-papiers');
+            } catch(e) {
+                // Fallback : sélectionner manuellement
+                inp.select();
+                document.execCommand('copy');
+                sendSystemMessage('🔗 Lien copié');
+            }
+        }
+        
+        async function copyInviteMessage() {
+            const ta = document.getElementById('inviteMessage');
+            if (!ta) return;
+            try {
+                await navigator.clipboard.writeText(ta.value);
+                sendSystemMessage('✉️ Message copié dans le presse-papiers');
+            } catch(e) {
+                ta.select();
+                document.execCommand('copy');
+                sendSystemMessage('✉️ Message copié');
+            }
+        }
+        
+        function inviteViaEmail() {
+            const ta = document.getElementById('inviteMessage');
+            const message = ta ? ta.value : buildInviteMessage();
+            const subject = 'Rejoins-moi sur ESPOYR — Code ' + (currentGameCode || '');
+            const mailto = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(message);
+            window.location.href = mailto;
+        }
+        
+        function inviteViaWhatsApp() {
+            const ta = document.getElementById('inviteMessage');
+            const message = ta ? ta.value : buildInviteMessage();
+            const url = 'https://wa.me/?text=' + encodeURIComponent(message);
+            window.open(url, '_blank');
+        }
+        
+        async function inviteViaWebShare() {
+            if (!navigator.share) {
+                showError('Partage non disponible sur ce navigateur.');
+                return;
+            }
+            const ta = document.getElementById('inviteMessage');
+            const message = ta ? ta.value : buildInviteMessage();
+            try {
+                await navigator.share({
+                    title: 'Rejoins-moi sur ESPOYR',
+                    text: message,
+                    url: buildInviteLink()
+                });
+                sendSystemMessage('📤 Invitation partagée');
+            } catch(e) {
+                if (e.name !== 'AbortError') console.error('Web Share error:', e);
+            }
+        }
+        // ═══════════════════════════════════════════════════════════════
+        // FIN MODULE INVITATION
+        // ═══════════════════════════════════════════════════════════════
+        
+                /**
          * Vérifier les paramètres URL pour reconnexion depuis email
          */
         function verifierURLReconnexion() {
@@ -3407,6 +3532,30 @@
                     window.history.replaceState({}, '', window.location.pathname);
                     reconnecterViaToken(code, playerId, token);
                     return true;
+                }
+            }
+            // Build 213.4 — Lien d'invitation ?join=CODE → pré-remplit le champ code
+            const joinCode = params.get('join');
+            if (joinCode && /^[A-Z0-9]{4,8}$/i.test(joinCode)) {
+                const codeUpper = joinCode.toUpperCase();
+                // Attendre que l'input existe puis le pré-remplir
+                const tryFill = () => {
+                    const inp = document.getElementById('gameCode');
+                    if (inp) {
+                        inp.value = codeUpper;
+                        // Focus sur le prénom pour inciter à compléter
+                        const nameInp = document.getElementById('playerName');
+                        if (nameInp && !nameInp.value) nameInp.focus();
+                        // Nettoyer l'URL
+                        window.history.replaceState({}, '', window.location.pathname);
+                        return true;
+                    }
+                    return false;
+                };
+                if (!tryFill()) {
+                    // Réessayer après chargement DOM
+                    document.addEventListener('DOMContentLoaded', tryFill);
+                    setTimeout(tryFill, 500);
                 }
             }
             return false;
