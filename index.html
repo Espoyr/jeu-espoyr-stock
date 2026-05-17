@@ -1,4 +1,4 @@
- <!-- V3(12) STOCK+COURSES TEST - Build 212.2 - FIX-MODALES -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213 - MODULE-L3 -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -7614,6 +7614,286 @@ activiteId: actId
         }
         
         // Calculer le patrimoine d'un joueur (valeur activités + équipements, hors cash)
+        // ═══════════════════════════════════════════════════════════════
+        // MODULE_LIGNE_3 — Build 213
+        // ═══════════════════════════════════════════════════════════════
+        const L3_CONFIG = {
+            DES_PENALITE: [1, 3, 4, 6],
+            DES_REDUCTION: [2, 5],
+            PHASE_DESACTIVATION: 3,
+            TIMEOUT_SECURITE: 30000,
+            get TAUX_BASE()       { return (typeof gameConfig !== 'undefined' && gameConfig && gameConfig.LIGNE3_TAUX_BASE !== undefined) ? gameConfig.LIGNE3_TAUX_BASE : 0.10; },
+            get MODIF_PENALITE()  { return (typeof gameConfig !== 'undefined' && gameConfig && gameConfig.LIGNE3_MODIF_PENALITE !== undefined) ? gameConfig.LIGNE3_MODIF_PENALITE : 1.5; },
+            get MODIF_REDUCTION() { return (typeof gameConfig !== 'undefined' && gameConfig && gameConfig.LIGNE3_MODIF_REDUCTION !== undefined) ? gameConfig.LIGNE3_MODIF_REDUCTION : 0.8; }
+        };
+        const L3_state = {
+            resolverChoix: null, resolverDe: null, resolverMaslow: null,
+            resolverCourte: null, resolverRecap: null, resolverAtterrissage: null
+        };
+        function L3_tirerDeFiscal() { return Math.floor(Math.random() * 6) + 1; }
+        function L3_decisionBot(profil) {
+            return !['PREDATEUR', 'INVESTISSEUR'].includes(profil || '');
+        }
+        
+        function L3_modaleChoixFranchissement(joueurId) {
+            const patrimoine = calculerPatrimoine(joueurId);
+            const taxeEstimee = Math.floor(patrimoine * L3_CONFIG.TAUX_BASE);
+            let detailHtml = '';
+            let totalAct = 0, totalEquip = 0;
+            Object.entries(COMPTABILITE.caisseActivites || {}).forEach(([actId, act]) => {
+                if (act.proprietaireId === joueurId) {
+                    const c = CASES[actId];
+                    const valAct = act.capital || c?.prix || 0;
+                    const nbA = act.equipementA || 0;
+                    const nbB = act.equipementB || 0;
+                    let valEquip = 0;
+                    if (nbA > 0) valEquip += getPrixA(parseInt(actId));
+                    if (nbA > 1) valEquip += getPrixB(parseInt(actId)) * (nbA - 1);
+                    valEquip += getPrixB(parseInt(actId)) * nbB;
+                    totalAct += valAct;
+                    totalEquip += valEquip;
+                    detailHtml += '<p style="margin:2px 0;font-size:0.85rem;">' + (c?.icon || '🏪') + ' ' + (c?.name || actId) + ' : ' + fmt(valAct) + '€' + (valEquip > 0 ? ' + équip. ' + fmt(valEquip) + '€' : '') + '</p>';
+                }
+            });
+            if (!detailHtml) detailHtml = '<p style="margin:2px 0;font-size:0.85rem;color:#6b7280;">Aucune activité possédée</p>';
+            
+            return new Promise(resolve => {
+                const timer = setTimeout(() => {
+                    if (L3_state.resolverChoix) {
+                        L3_state.resolverChoix = null;
+                        closeModal();
+                        resolve(true);
+                    }
+                }, L3_CONFIG.TIMEOUT_SECURITE);
+                L3_state.resolverChoix = (choix) => {
+                    clearTimeout(timer);
+                    L3_state.resolverChoix = null;
+                    closeModal();
+                    resolve(choix);
+                };
+                const tauxPct = Math.round(L3_CONFIG.TAUX_BASE * 100);
+                document.getElementById('modalContainer').innerHTML =
+                    '<div class="modal-overlay">' +
+                    '<div class="modal">' +
+                    '<h3>🏛️ Franchissement Ligne 3 — Contrôle fiscal</h3>' +
+                    '<div style="background:#fef3c7;padding:12px;border-radius:8px;margin:10px 0;">' +
+                    '<p style="margin:0;font-weight:bold;">📊 Détail de votre patrimoine :</p>' +
+                    detailHtml +
+                    '<hr style="margin:8px 0;border-color:#fbbf24;">' +
+                    '<p style="margin:4px 0;">Activités : <strong>' + fmt(totalAct) + '€</strong></p>' +
+                    '<p style="margin:4px 0;">Équipements : <strong>' + fmt(totalEquip) + '€</strong></p>' +
+                    '<p style="margin:4px 0;font-weight:bold;font-size:1.05rem;">Total : <strong>' + fmt(patrimoine) + '€</strong></p>' +
+                    '<p style="margin:8px 0 0;text-align:center;">🏛️ Taxe estimée (' + tauxPct + '%) : <strong>' + fmt(taxeEstimee) + '€</strong></p>' +
+                    '</div>' +
+                    '<div style="background:#fef2f2;padding:10px;border-radius:8px;margin:8px 0;">' +
+                    '<p style="margin:0;text-align:center;font-size:0.85rem;color:#92400e;">' +
+                    '📋 <strong>Validez votre déclaration</strong> pour payer la taxe normale.<br>' +
+                    'Sinon, tirage de dé : 🎲 1,3,4,6 = <strong>pénalité +50%</strong> | 🎲 2,5 = <strong>réduction -20%</strong></p>' +
+                    '</div>' +
+                    '<div class="modal-buttons">' +
+                    '<div style="display:flex;flex-direction:column;gap:8px;width:100%;">' +
+                    '<button class="btn btn-primary" style="width:100%;" onclick="L3_state.resolverChoix && L3_state.resolverChoix(true)">✅ Valider ma déclaration</button>' +
+                    '<button class="btn" style="width:100%;background:#f3f4f6;color:#6b7280;" onclick="L3_state.resolverChoix && L3_state.resolverChoix(false)">❌ Passer (je prends le risque)</button>' +
+                    '</div></div></div></div>';
+            });
+        }
+        
+        function L3_modaleResultatDe(de, modificateur) {
+            return new Promise(resolve => {
+                const timer = setTimeout(() => {
+                    if (L3_state.resolverDe) { L3_state.resolverDe = null; closeModal(); resolve(); }
+                }, L3_CONFIG.TIMEOUT_SECURITE);
+                L3_state.resolverDe = () => { clearTimeout(timer); L3_state.resolverDe = null; closeModal(); resolve(); };
+                const bg = modificateur > 1 ? '#fee2e2' : '#dcfce7';
+                const fg = modificateur > 1 ? '#dc2626' : '#16a34a';
+                const lib = modificateur > 1 ? '🟥 Pénalité +50% appliquée' : '🟩 Réduction −20% appliquée';
+                const titre = modificateur > 1 ? 'Le dé est défavorable' : 'Coup de chance !';
+                showModal(
+                    '<h3>🎲 ' + titre + '</h3>' +
+                    '<div style="background:' + bg + ';padding:14px;border-radius:8px;margin:10px 0;text-align:center;">' +
+                    '<p style="margin:0;font-size:1.8rem;">Dé : <strong>' + de + '</strong></p>' +
+                    '<p style="margin:10px 0 0;color:' + fg + ';font-weight:bold;font-size:1.1rem;">' + lib + '</p>' +
+                    '</div>',
+                    '<button class="btn btn-primary" onclick="L3_state.resolverDe && L3_state.resolverDe()">OK ✓</button>'
+                );
+            });
+        }
+        
+        function L3_modaleRecapTaxe(result) {
+            return new Promise(resolve => {
+                const timer = setTimeout(() => {
+                    if (L3_state.resolverRecap) { L3_state.resolverRecap = null; closeModal(); resolve(); }
+                }, L3_CONFIG.TIMEOUT_SECURITE);
+                L3_state.resolverRecap = () => { clearTimeout(timer); L3_state.resolverRecap = null; closeModal(); resolve(); };
+                if (!result || result.taxe <= 0) {
+                    showModal(
+                        '<h3>🏛️ Franchissement Ligne 3</h3>' +
+                        '<div style="background:#f0fdf4;padding:14px;border-radius:8px;margin:10px 0;text-align:center;">' +
+                        '<p style="margin:0;">Aucune taxe (patrimoine nul).</p></div>',
+                        '<button class="btn btn-primary" onclick="L3_state.resolverRecap && L3_state.resolverRecap()">OK ✓</button>'
+                    );
+                    return;
+                }
+                const modLabel = result.modificateur > 1 ? ' (pénalité +50%)' : result.modificateur < 1 ? ' (réduction -20%)' : '';
+                const tauxPct = Math.round(L3_CONFIG.TAUX_BASE * 100);
+                showModal(
+                    '<h3>🏛️ Taxe Ligne 3' + modLabel + '</h3>' +
+                    '<div style="background:#fef3c7;padding:12px;border-radius:8px;margin:10px 0;">' +
+                    '<p style="margin:2px 0;">Patrimoine : <strong>' + fmt(result.patrimoine) + '€</strong></p>' +
+                    '<p style="margin:2px 0;">Taxe brute : <strong>' + fmt(result.taxeBase) + '€</strong> (' + tauxPct + '%)</p>' +
+                    (result.modificateur !== 1 ? '<p style="margin:2px 0;">Modificateur : <strong>×' + result.modificateur + '</strong></p>' : '') +
+                    '<p style="margin:6px 0;font-weight:bold;font-size:1.05rem;">Taxe finale : <strong>' + fmt(result.taxe) + '€</strong></p>' +
+                    '<p style="margin:2px 0;color:#16a34a;">Payé : <strong>' + fmt(result.paye) + '€</strong></p>' +
+                    (result.impaye > 0 ? '<p style="margin:2px 0;color:#dc2626;">Impayé (arriérés) : <strong>' + fmt(result.impaye) + '€</strong></p>' : '') +
+                    '</div>',
+                    '<button class="btn btn-primary" onclick="L3_state.resolverRecap && L3_state.resolverRecap()">OK ✓</button>'
+                );
+            });
+        }
+        
+        function L3_modaleAtterrissagePhase12() {
+            return new Promise(resolve => {
+                const timer = setTimeout(() => {
+                    if (L3_state.resolverAtterrissage) { L3_state.resolverAtterrissage = null; closeModal(); resolve(); }
+                }, L3_CONFIG.TIMEOUT_SECURITE);
+                L3_state.resolverAtterrissage = () => { clearTimeout(timer); L3_state.resolverAtterrissage = null; closeModal(); resolve(); };
+                showModal(
+                    '<h3>🏛️ Bienvenue au contrôle fiscal</h3>' +
+                    '<div style="background:#f0fdf4;padding:14px;border-radius:8px;margin:10px 0;">' +
+                    '<p style="margin:0;text-align:center;color:#059669;font-size:0.95rem;">' +
+                    'Vous vous arrêtez sur la case Taxe sans franchir la Ligne 3.<br>' +
+                    'Aucun prélèvement à cet arrêt.</p></div>',
+                    '<button class="btn btn-primary" onclick="L3_state.resolverAtterrissage && L3_state.resolverAtterrissage()">OK ✓</button>'
+                );
+            });
+        }
+        
+        function L3_modaleMaslow() {
+            return new Promise(resolve => {
+                const timer = setTimeout(() => {
+                    if (L3_state.resolverMaslow) { L3_state.resolverMaslow = null; closeModal(); resolve(); }
+                }, L3_CONFIG.TIMEOUT_SECURITE);
+                L3_state.resolverMaslow = () => { clearTimeout(timer); L3_state.resolverMaslow = null; closeModal(); resolve(); };
+                showModal(
+                    '<h3>🔶 Phase 3 — Système Espoyr activé</h3>' +
+                    '<div style="background:#fef3c7;padding:14px;border-radius:8px;margin:10px 0;">' +
+                    "<p style=\"margin:0 0 8px;\">En phase 3, <strong>plus aucune taxe Ligne 3</strong> n'est prélevée.</p>" +
+                    "<p style=\"margin:0 0 8px;font-size:0.92rem;\">Les services communs (nourriture saine, eau potable, éducation, soins, santé, sécurité, justice) — qui correspondent aux <strong>besoins fondamentaux de la pyramide de Maslow</strong> — sont désormais financés par la <strong>création monétaire d'espoyrs (#)</strong> au moment du passage de chaque membre AAA.</p>" +
+                    "<p style=\"margin:0;font-size:0.92rem;\">Les espoyrs ne sont mis en circulation <strong>qu'après</strong> avoir financé ces services communs prioritaires. Votre simple existence en tant que membre AAA contribue à ce système.</p>" +
+                    '</div>',
+                    '<button class="btn btn-primary" onclick="L3_state.resolverMaslow && L3_state.resolverMaslow()">J\'ai compris ✓</button>'
+                );
+            });
+        }
+        
+        function L3_modaleCourtePhase3() {
+            return new Promise(resolve => {
+                const timer = setTimeout(() => {
+                    if (L3_state.resolverCourte) { L3_state.resolverCourte = null; closeModal(); resolve(); }
+                }, L3_CONFIG.TIMEOUT_SECURITE);
+                L3_state.resolverCourte = () => { clearTimeout(timer); L3_state.resolverCourte = null; closeModal(); resolve(); };
+                showModal(
+                    '<h3>🔶 Espoyr — Phase 3</h3>' +
+                    '<div style="background:#f0fdf4;padding:14px;border-radius:8px;margin:10px 0;">' +
+                    "<p style=\"margin:0;color:#059669;\">Nous avons réduit grâce à l'espoyr toute la partie taxe, impôt, contrôle, suspicion de fraude. Plus besoin de paradis fiscaux ni d'ingénierie fiscale. Les services fondamentaux envers les citoyens sont assurés.</p>" +
+                    '</div>',
+                    '<button class="btn btn-primary" onclick="L3_state.resolverCourte && L3_state.resolverCourte()">OK ✓</button>'
+                );
+            });
+        }
+        
+        async function L3_traiterFranchissement(joueurId) {
+            const phase = gameState?.phase || 1;
+            const player = playersData[joueurId];
+            if (!player) return;
+            const estHumain = (joueurId === myPlayerId);
+            
+            // Phase 3 : pas de taxe, message pédagogique pour humain
+            if (phase >= L3_CONFIG.PHASE_DESACTIVATION) {
+                if (!estHumain) return;
+                const dejaVu = player.maslowVu === true;
+                if (!dejaVu) {
+                    await L3_modaleMaslow();
+                    try {
+                        await db.ref('parties/' + currentGameCode + '/players/' + joueurId + '/maslowVu').set(true);
+                        if (playersData[joueurId]) playersData[joueurId].maslowVu = true;
+                    } catch(e) { console.error('L3 maslowVu:', e); }
+                } else {
+                    await L3_modaleCourtePhase3();
+                }
+                return;
+            }
+            
+            // Phase 1&2 : taxe normale
+            let declarer;
+            if (estHumain) {
+                declarer = await L3_modaleChoixFranchissement(joueurId);
+            } else {
+                declarer = L3_decisionBot(player.botProfil);
+            }
+            
+            let modificateur = 1.0;
+            let de = null;
+            if (!declarer) {
+                de = L3_tirerDeFiscal();
+                modificateur = L3_CONFIG.DES_PENALITE.includes(de) ? L3_CONFIG.MODIF_PENALITE : L3_CONFIG.MODIF_REDUCTION;
+                if (estHumain) await L3_modaleResultatDe(de, modificateur);
+            }
+            
+            const result = await comptaTaxeLigne3(joueurId, modificateur);
+            
+            try {
+                await db.ref('parties/' + currentGameCode + '/players/' + joueurId + '/euro')
+                    .set(COMPTABILITE.caisseJoueurs[joueurId].euro);
+                await syncComptabiliteToFirebase();
+            } catch(e) { console.error('L3 sync:', e); }
+            
+            logEvent('LIGNE_3_TAX', joueurId, {
+                patrimoine: result.patrimoine, taxeBase: result.taxeBase, taxe: result.taxe,
+                modificateur, declarer, de, paye: result.paye, impaye: result.impaye
+            });
+            
+            if (declarer) {
+                sendSystemMessage('📋 ' + player.name + ' valide sa déclaration ✅');
+            } else {
+                const deLabel = modificateur > 1 ? 'pénalité +50% (🎲' + de + ')' : 'réduction -20% (🎲' + de + ')';
+                sendSystemMessage('📋 ' + player.name + ' refuse de déclarer → ' + deLabel);
+            }
+            if (result.taxe > 0) {
+                const modLabel = modificateur > 1 ? ' (pénalité +50%)' : modificateur < 1 ? ' (réduction -20%)' : '';
+                sendSystemMessage('🏛️ ' + player.name + ' franchit la Ligne 3 : taxe ' + fmt(result.taxe) + '€' + modLabel);
+                if (result.impaye > 0) sendSystemMessage('⚠️ ' + player.name + ' : taxe impayée ' + fmt(result.impaye) + '€ → arriérés');
+            } else {
+                sendSystemMessage('🏛️ ' + player.name + ' franchit la Ligne 3 (patrimoine nul, pas de taxe)');
+            }
+            
+            if (estHumain) await L3_modaleRecapTaxe(result);
+        }
+        
+        async function L3_traiterAtterrissageCase13(joueurId) {
+            if (joueurId !== myPlayerId) return;
+            const phase = gameState?.phase || 1;
+            const player = playersData[joueurId];
+            if (phase >= L3_CONFIG.PHASE_DESACTIVATION) {
+                const dejaVu = player?.maslowVu === true;
+                if (!dejaVu) {
+                    await L3_modaleMaslow();
+                    try {
+                        await db.ref('parties/' + currentGameCode + '/players/' + joueurId + '/maslowVu').set(true);
+                        if (playersData[joueurId]) playersData[joueurId].maslowVu = true;
+                    } catch(e) { console.error('L3 maslowVu:', e); }
+                } else {
+                    await L3_modaleCourtePhase3();
+                }
+            } else {
+                await L3_modaleAtterrissagePhase12();
+            }
+            safeNextTurn();
+        }
+        // ═══════════════════════════════════════════════════════════════
+        // FIN MODULE_LIGNE_3
+        // ═══════════════════════════════════════════════════════════════
+        
         function calculerPatrimoine(joueurId) {
             let totalActivites = 0;
             let totalEquipements = 0;
@@ -7641,7 +7921,9 @@ activiteId: actId
             const caisse = COMPTABILITE.caisseJoueurs[joueurId];
             
             const patrimoine = calculerPatrimoine(joueurId);
-            const taxeBase = Math.floor(patrimoine * 0.10);
+            // Build 213 : taux configurable via L3_CONFIG.TAUX_BASE
+            const tauxL3 = (typeof L3_CONFIG !== 'undefined') ? L3_CONFIG.TAUX_BASE : 0.10;
+            const taxeBase = Math.floor(patrimoine * tauxL3);
             const taxe = Math.floor(taxeBase * modificateur);
             
             if (taxe <= 0) return { patrimoine: 0, taxeBase: 0, taxe: 0, modificateur, paye: 0, impaye: 0 };
@@ -10177,9 +10459,7 @@ function aTraverseLaCase0(posDepart, posArrivee, sens) {
 // On franchit si on passe par la frontière 13→14 (sens +) ou 14→13 (sens -)
 function aTraverseLaLigne3(posDepart, posArrivee, sens) {
     if (posDepart === posArrivee) return false;
-    // Phase 3 : pas de taxe Ligne 3
-    if ((gameState?.phase || 1) >= 3) return false;
-    
+    // Build 213 : filtre phase 3 géré par L3_traiterFranchissement
     let pos = posDepart;
     let prevPos;
     let steps = 0;
@@ -14884,274 +15164,17 @@ function initSystemeDe() {
             `, `<button class="btn btn-primary" onclick="safeNextTurn();">OK</button>`);
         }
         
+        // Build 213 : handleTaxe délègue au MODULE_LIGNE_3
         async function handleTaxe() {
-            // Case 13 = Déclaration fiscale
-            const patrimoine = calculerPatrimoine(myPlayerId);
-            const caisse = COMPTABILITE.caisseJoueurs[myPlayerId] || {};
-            const phase = gameState?.phase || 1;
-            const taxeEstimee = Math.floor(patrimoine * 0.10);
-            
-            // Détail du patrimoine
-            let detailHtml = '';
-            let totalActivites = 0;
-            let totalEquipements = 0;
-            
-            Object.entries(COMPTABILITE.caisseActivites || {}).forEach(([actId, act]) => {
-                if (act.proprietaireId === myPlayerId) {
-                    const c = CASES[actId];
-                    const valAct = act.capital || c?.prix || 0;
-                    const nbEquip = act.equipements || 0;
-                    const valEquip = nbEquip * 100;
-                    totalActivites += valAct;
-                    totalEquipements += valEquip;
-                    detailHtml += `<p style="margin: 2px 0; font-size: 0.85rem;">
-                        ${c?.icon || '🏪'} ${c?.name || actId} : ${fmt(valAct)}€
-                        ${nbEquip > 0 ? `+ ${nbEquip} équip. (${fmt(valEquip)}€)` : ''}
-                    </p>`;
-                }
-            });
-            
-            if (!detailHtml) {
-                detailHtml = '<p style="margin: 2px 0; font-size: 0.85rem; color: #6b7280;">Aucune activité possédée</p>';
-            }
-            
-            if (phase >= 3) {
-                // Phase 3 : pas de taxe, juste informatif
-                showModal(`
-                    <h3>🏛️ Case Taxe</h3>
-                    <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin: 10px 0;">
-                        <p style="margin: 0; text-align: center; color: #059669;">
-                            Phase 3 : taxe Ligne 3 <strong>supprimée</strong> ✅
-                        </p>
-                    </div>
-                `, `<button class="btn btn-primary" onclick="safeNextTurn();">OK ✓</button>`);
-                return;
-            }
-            
-            // Modal NON fermable par overlay (pas de onclick sur overlay)
-            document.getElementById('modalContainer').innerHTML = `
-                <div class="modal-overlay">
-                    <div class="modal">
-                        <h3>🏛️ Case Taxe — Déclaration fiscale</h3>
-                        <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin: 10px 0;">
-                            <p style="margin: 0; font-weight: bold;">📊 Détail de ton patrimoine :</p>
-                            ${detailHtml}
-                            <hr style="margin: 8px 0; border-color: #fbbf24;">
-                            <p style="margin: 4px 0;">Activités : <strong>${fmt(totalActivites)}€</strong></p>
-                            <p style="margin: 4px 0;">Équipements : <strong>${fmt(totalEquipements)}€</strong></p>
-                            <p style="margin: 4px 0; font-weight: bold; font-size: 1.05rem;">
-                                Total patrimoine : <strong>${fmt(patrimoine)}€</strong>
-                            </p>
-                            <p style="margin: 8px 0 0 0; text-align: center;">
-                                🏛️ Taxe estimée (10%) : <strong>${fmt(taxeEstimee)}€</strong>
-                            </p>
-                        </div>
-                        <div style="background: #fef2f2; padding: 10px; border-radius: 8px; margin: 8px 0;">
-                            <p style="margin: 0; text-align: center; font-size: 0.85rem; color: #92400e;">
-                                📋 <strong>Validez votre déclaration</strong> pour payer la taxe normale.<br>
-                                Si vous ne validez pas et franchissez la Ligne 3,<br>
-                                tirage de dé : 🎲 1,3,4,6 = <strong>pénalité +50%</strong> | 🎲 2,5 = <strong>réduction -20%</strong>
-                            </p>
-                        </div>
-                        <div class="modal-buttons">
-                            <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                                <button class="btn btn-primary" style="width: 100%;" 
-                                    onclick="validerDeclarationFiscale();">
-                                    ✅ Valider ma déclaration
-                                </button>
-                                <button class="btn" style="width: 100%; background: #f3f4f6; color: #6b7280;" 
-                                    onclick="refuserDeclarationFiscale();">
-                                    ❌ Passer (je prends le risque)
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
+            await L3_traiterAtterrissageCase13(myPlayerId);
         }
         
-        async function validerDeclarationFiscale() {
-            closeModal();
-            try {
-                await db.ref(`parties/${currentGameCode}/players/${myPlayerId}/declarationFiscale`).set(true);
-                if (playersData[myPlayerId]) playersData[myPlayerId].declarationFiscale = true;
-                sendSystemMessage(`📋 ${myName} valide sa déclaration fiscale ✅`);
-            } catch(e) {
-                console.error('Erreur validation fiscale:', e);
-            }
-            // Toujours passer au tour suivant
-            await nextTurn();
-        }
-        
-        async function refuserDeclarationFiscale() {
-            closeModal();
-            try {
-                await db.ref(`parties/${currentGameCode}/players/${myPlayerId}/declarationFiscale`).set(false);
-                if (playersData[myPlayerId]) playersData[myPlayerId].declarationFiscale = false;
-                sendSystemMessage(`📋 ${myName} refuse de valider sa déclaration fiscale ⚠️`);
-            } catch(e) {
-                console.error('Erreur refus fiscal:', e);
-            }
-            // Toujours passer au tour suivant
-            await nextTurn();
-        }
-        
-        // ========== LIGNE 3 : Taxe 10% patrimoine au franchissement ==========
+                // Build 213 : handleLigne3 délègue au MODULE_LIGNE_3
         async function handleLigne3(joueurId) {
-            const player = playersData[joueurId];
-            const caisseBefore = { ...(COMPTABILITE.caisseJoueurs[joueurId] || {}) };
-            
-            // Vérifier la déclaration fiscale
-            const declarationFiscale = player?.declarationFiscale === true;
-            let modificateur = 1.0;
-            let resultatDe = null;
-            let deMessage = '';
-            
-            if (!declarationFiscale) {
-                // Pas de déclaration validée → tirage de dé
-                resultatDe = Math.floor(Math.random() * 6) + 1;
-                if ([1, 3, 4, 6].includes(resultatDe)) {
-                    modificateur = 1.5; // Pénalité +50%
-                    deMessage = `🎲 Dé = ${resultatDe} → Pénalité +50% !`;
-                } else {
-                    modificateur = 0.8; // Réduction -20%
-                    deMessage = `🎲 Dé = ${resultatDe} → Chance ! Réduction -20%`;
-                }
-            }
-            
-            const result = await comptaTaxeLigne3(joueurId, modificateur);
-            
-            await db.ref(`parties/${currentGameCode}/players/${joueurId}/euro`)
-                .set(COMPTABILITE.caisseJoueurs[joueurId].euro);
-            // Reset la déclaration fiscale après franchissement
-            await db.ref(`parties/${currentGameCode}/players/${joueurId}/declarationFiscale`).set(null);
-            if (player) player.declarationFiscale = null;
-            await syncComptabiliteToFirebase();
-            
-            logEvent('LIGNE_3_TAX', joueurId, {
-                patrimoine: result.patrimoine,
-                taxeBase: result.taxeBase,
-                taxe: result.taxe,
-                modificateur,
-                declarationFiscale,
-                resultatDe,
-                paye: result.paye,
-                impaye: result.impaye
-            });
-            
-            // Messages système
-            if (result.taxe > 0) {
-                const modLabel = modificateur > 1 ? ' (pénalité +50%)' : modificateur < 1 ? ' (réduction -20%)' : '';
-                sendSystemMessage(`🏛️ ${player?.name} franchit la Ligne 3 : taxe ${fmt(result.taxe)}€${modLabel}`);
-                if (result.impaye > 0) {
-                    sendSystemMessage(`⚠️ ${player?.name} : taxe impayée ${fmt(result.impaye)}€ → arriérés`);
-                }
-            } else {
-                sendSystemMessage(`🏛️ ${player?.name} franchit la Ligne 3 (patrimoine: ${fmt(0)}€, pas de taxe)`);
-            }
-            
-            // Modal détaillé pour le joueur humain
-            if (joueurId === myPlayerId) {
-                // Détail du patrimoine
-                let detailHtml = '';
-                let totalActivites = 0;
-                let totalEquipements = 0;
-                
-                Object.entries(COMPTABILITE.caisseActivites || {}).forEach(([actId, act]) => {
-                    if (act.proprietaireId === joueurId) {
-                        const c = CASES[actId];
-                        const valAct = act.capital || c?.prix || 0;
-                        const nbEquip = act.equipements || 0;
-                        const valEquip = nbEquip * 100;
-                        totalActivites += valAct;
-                        totalEquipements += valEquip;
-                        detailHtml += `<p style="margin: 2px 0; font-size: 0.85rem;">
-                            ${c?.icon || '🏪'} ${c?.name || actId} : ${fmt(valAct)}€
-                            ${nbEquip > 0 ? `+ ${nbEquip} équip. (${fmt(valEquip)}€)` : ''}
-                        </p>`;
-                    }
-                });
-                
-                if (!detailHtml) {
-                    detailHtml = '<p style="margin: 2px 0; font-size: 0.85rem; color: #6b7280;">Aucune activité possédée</p>';
-                }
-                
-                // Section déclaration fiscale
-                let fiscalHtml = '';
-                if (declarationFiscale) {
-                    fiscalHtml = `<div style="background: #f0fdf4; padding: 8px; border-radius: 6px; margin: 8px 0;">
-                        <p style="margin: 0; text-align: center; color: #059669;">
-                            ✅ Déclaration fiscale validée → taxe normale
-                        </p>
-                    </div>`;
-                } else {
-                    const deColor = modificateur > 1 ? '#dc2626' : '#059669';
-                    const deLabel = modificateur > 1 ? '⚠️ Pénalité +50%' : '🍀 Réduction -20%';
-                    fiscalHtml = `<div style="background: #fef2f2; padding: 8px; border-radius: 6px; margin: 8px 0;">
-                        <p style="margin: 0; text-align: center;">
-                            ❌ Déclaration non validée → tirage de dé
-                        </p>
-                        <p style="margin: 4px 0 0 0; text-align: center; font-size: 1.2rem; font-weight: bold; color: ${deColor};">
-                            ${deMessage}
-                        </p>
-                        <p style="margin: 2px 0 0 0; text-align: center; font-size: 0.85rem; color: ${deColor};">
-                            ${deLabel}
-                        </p>
-                    </div>`;
-                }
-                
-                return new Promise(resolve => {
-                    window.__ligne3Resolve = resolve;
-                    showModal(`
-                        <h3>🏛️ Ligne 3 — Taxe sur le patrimoine</h3>
-                        
-                        ${fiscalHtml}
-                        
-                        <div style="background: #fef3c7; padding: 12px; border-radius: 8px; margin: 10px 0;">
-                            <p style="margin: 0; font-weight: bold;">📊 Calcul du patrimoine :</p>
-                            ${detailHtml}
-                            <hr style="margin: 8px 0; border-color: #fbbf24;">
-                            <p style="margin: 4px 0;">Activités : <strong>${fmt(totalActivites)}€</strong></p>
-                            <p style="margin: 4px 0;">Équipements : <strong>${fmt(totalEquipements)}€</strong></p>
-                            <p style="margin: 4px 0; font-weight: bold;">
-                                Patrimoine : <strong>${fmt(result.patrimoine)}€</strong>
-                            </p>
-                        </div>
-                        
-                        <div style="background: ${result.taxe > 0 ? '#dbeafe' : '#f0fdf4'}; padding: 12px; border-radius: 8px; margin: 8px 0;">
-                            <p style="margin: 0;">Taxe base (10%) : <strong>${fmt(result.taxeBase)}€</strong></p>
-                            ${modificateur !== 1.0 ? `
-                                <p style="margin: 4px 0; color: ${modificateur > 1 ? '#dc2626' : '#059669'};">
-                                    ${modificateur > 1 ? '⚠️ +50% pénalité' : '🍀 -20% réduction'} → <strong>${fmt(result.taxe)}€</strong>
-                                </p>
-                            ` : ''}
-                            ${result.taxe > 0 ? `
-                                <hr style="margin: 8px 0; border-color: #93c5fd;">
-                                <p style="margin: 4px 0; font-size: 0.9rem;">
-                                    💰 Cash avant : <strong>${fmt(caisseBefore.euro || 0)}€</strong>
-                                </p>
-                                ${result.paye > 0 ? `
-                                    <p style="margin: 4px 0; color: #059669;">
-                                        ✅ Payé : <strong>${fmt(result.paye)}€</strong>
-                                    </p>
-                                ` : ''}
-                                ${result.impaye > 0 ? `
-                                    <p style="margin: 4px 0; color: #dc2626;">
-                                        ⚠️ Arriérés : <strong>${fmt(result.impaye)}€</strong>
-                                    </p>
-                                ` : ''}
-                                <p style="margin: 4px 0; font-size: 0.9rem;">
-                                    💰 Cash après : <strong>${fmt(COMPTABILITE.caisseJoueurs[joueurId]?.euro || 0)}€</strong>
-                                </p>
-                            ` : `
-                                <p style="margin: 4px 0; color: #059669;">✅ Pas de taxe à payer</p>
-                            `}
-                        </div>
-                    `, `<button class="btn btn-primary" onclick="closeModal(); if(window.__ligne3Resolve){window.__ligne3Resolve(); window.__ligne3Resolve=null;}">OK ✓</button>`);
-                });
-            }
+            await L3_traiterFranchissement(joueurId);
         }
         
-        async function handleLigne2(c) {
+                async function handleLigne2(c) {
             const players = Object.values(playersData);
             
             // ═══ Frais indexés à l'inflation ═══
@@ -16033,35 +16056,10 @@ function initSystemeDe() {
             }
             sendSystemMessage(msgDeplacement);
             
-            // *** LIGNE 3 : Taxe 10% patrimoine au franchissement ***
+            // *** Build 213 — LIGNE 3 : délègue au MODULE_LIGNE_3 ***
             const passageLigne3Bot = aTraverseLaLigne3(bot.position, newPosition, sens);
             if (passageLigne3Bot) {
-                // Vérifier déclaration fiscale du bot
-                const botDeclaration = bot.declarationFiscale === true;
-                let botModificateur = 1.0;
-                if (!botDeclaration) {
-                    const botDe = Math.floor(Math.random() * 6) + 1;
-                    botModificateur = [1, 3, 4, 6].includes(botDe) ? 1.5 : 0.8;
-                    const deLabel = botModificateur > 1 ? `pénalité +50% (🎲${botDe})` : `réduction -20% (🎲${botDe})`;
-                    sendSystemMessage(`📋 ${bot.name} n'avait pas validé sa déclaration → ${deLabel}`);
-                }
-                
-                const resultTaxe = await comptaTaxeLigne3(bot.id, botModificateur);
-                
-                // Reset déclaration après franchissement
-                await db.ref(`parties/${currentGameCode}/players/${bot.id}/declarationFiscale`).set(null);
-                if (playersData[bot.id]) playersData[bot.id].declarationFiscale = null;
-                
-                if (resultTaxe.taxe > 0) {
-                    await db.ref(`parties/${currentGameCode}/players/${bot.id}/euro`)
-                        .set(COMPTABILITE.caisseJoueurs[bot.id].euro);
-                    await syncComptabiliteToFirebase();
-                    const modLabel = botModificateur !== 1.0 ? (botModificateur > 1 ? ' (pénalité)' : ' (réduit)') : '';
-                    sendSystemMessage(`🏛️ ${bot.name} franchit Ligne 3 : taxe ${fmt(resultTaxe.taxe)}€${modLabel}`);
-                    if (resultTaxe.impaye > 0) {
-                        sendSystemMessage(`⚠️ ${bot.name} : taxe impayée ${fmt(resultTaxe.impaye)}€ → arriérés`);
-                    }
-                }
+                await L3_traiterFranchissement(bot.id);
             }
             
             // Salaire
@@ -16889,10 +16887,7 @@ function initSystemeDe() {
                 }
                 await syncComptabiliteToFirebase();
             } else if (c.type === 'taxe') {
-                // Case Taxe : le bot valide automatiquement sa déclaration fiscale
-                await db.ref(`parties/${currentGameCode}/players/${botId}/declarationFiscale`).set(true);
-                if (playersData[botId]) playersData[botId].declarationFiscale = true;
-                sendSystemMessage(`📋 ${bot.name} valide sa déclaration fiscale ✅`);
+                // Build 213 : bot atterrit case 13 = silencieux
             } else if (c.type === 'chance') {
                 // ═══ Phase 3 : Chance → achat collectif ═══
                 if (collectifEstEligible(position)) {
