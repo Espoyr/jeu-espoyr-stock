@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213 - MODULE-L3 -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.1 - LOBBY-BOTS-INLINE -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -430,7 +430,7 @@
             <div id="hostControls" class="hidden" style="margin-top: 15px;">
                 <button class="btn btn-primary btn-full" onclick="startGame()" id="startGameBtn" disabled>🚀 Lancer</button>
                 <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <button class="btn" style="flex:1; background: #dbeafe; color: #2563eb;" onclick="showAddBotModal()">👥 Joueur complémentaire</button>
+                    <button class="btn" style="flex:1; background: #dbeafe; color: #2563eb;" onclick="showAddBotModal()">➕ Ajouter un bot</button>
                     <button class="btn" style="flex:1; background: #fef3c7; color: #92400e;" onclick="showConfigModal()">⚙️ Config</button>
                 </div>
                 <button id="lobbyDeleteBtn" class="btn hidden" style="width:100%; margin-top: 10px; background: #fee2e2; color: #dc2626; font-size: 0.85rem;" onclick="confirmerSuppressionLobby()">🗑️ Supprimer cette partie</button>
@@ -8486,7 +8486,7 @@ activiteId: actId
                         sendSystemMessage(`${botName} (${profilIcon}) a rejoint !${profBotObj.membreAAA ? ' 🔶 Membre AAA' : ''}`);
                     }
                     await syncComptabiliteToFirebase();
-                    sendSystemMessage(`🤖 3 joueurs complémentaires ajoutés (mode solo). Modifiables via 👥 Joueur complémentaire.`);
+                    sendSystemMessage(`🤖 3 bots ajoutés (mode solo). Modifiables avec ✏️ dans la salle d'attente.`);
                 }
             }));
             });
@@ -9140,19 +9140,33 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
         function updatePlayersUI() {
             const playerArray = getOrderedPlayers()
             
-            // Lobby
+            // Lobby — Build 213.1 : intègre profil + boutons ✏️/🗑️ pour les bots
             const lobbyEl = document.getElementById('lobbyPlayers');
             if (lobbyEl) {
-                lobbyEl.innerHTML = playerArray.map(p => `
-                    <div class="player-item ${p.id === myPlayerId ? 'me' : ''}">
-                        <span class="player-avatar">${p.avatar}</span>
-                        <div class="player-info">
-                            <div class="player-name">${p.name}</div>
-                            <div class="player-stats">${p.isHost ? '👑 Hôte' : 'Joueur'} - 💰${fmt(p.euro || CONFIG.capitalInitial)}€</div>
-                        </div>
-                        ${p.isHost ? '<span class="player-badge badge-host">HOST</span>' : ''}
-                    </div>
-                `).join('');
+                lobbyEl.innerHTML = playerArray.map(p => {
+                    const estBot = !!p.isBot;
+                    const aaa = (p.membreAAA || (COMPTABILITE?.potAAA?.membres?.includes(p.id))) ? ' ' + LOGO_AAA : '';
+                    const profilLib = (estBot && PROFILS_IA && PROFILS_IA[p.botProfil]) ? PROFILS_IA[p.botProfil].nom : '';
+                    const caractere = estBot ? (p.profil === 'creatif' ? '🎨 Créatif' : '🏛️ Contributif') : '';
+                    const stats = estBot
+                        ? profilLib + ' · ' + caractere
+                        : ((p.isHost ? '👑 Hôte' : 'Joueur') + ' - 💰' + fmt(p.euro || CONFIG.capitalInitial) + '€');
+                    const actionsBot = estBot
+                        ? '<div style="display:flex;gap:4px;align-items:center;margin-left:8px;">' +
+                            '<button class="btn" style="font-size:0.75rem;padding:5px 9px;" onclick="event.stopPropagation(); editBotModal(\''+p.id+'\')" title="Modifier">✏️</button>' +
+                            '<button class="btn" style="font-size:0.75rem;padding:5px 9px;background:#fee2e2;color:#dc2626;" onclick="event.stopPropagation(); removeBot(\''+p.id+'\')" title="Supprimer">🗑️</button>' +
+                          '</div>'
+                        : '';
+                    return '<div class="player-item ' + (p.id === myPlayerId ? 'me' : '') + '" style="display:flex;align-items:center;">' +
+                        '<span class="player-avatar">' + p.avatar + '</span>' +
+                        '<div class="player-info" style="flex:1;">' +
+                            '<div class="player-name">' + p.name + aaa + '</div>' +
+                            '<div class="player-stats" style="font-size:0.82rem;color:#6b7280;">' + stats + '</div>' +
+                        '</div>' +
+                        (p.isHost ? '<span class="player-badge badge-host">HOST</span>' : '') +
+                        actionsBot +
+                    '</div>';
+                }).join('');
             }
             // Bouton suppression lobby : visible si hôte ET seul (ou aucun autre joueur humain non-bot)
             const lobbyDeleteBtn = document.getElementById('lobbyDeleteBtn');
