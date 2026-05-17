@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213.5 - GMAIL-SHARE -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.6 - JITSI-VISIO -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -356,6 +356,15 @@
     </style>
 </head>
 <body>
+    <!-- Build 213.6 — Container iframe Jitsi (visio desktop seulement) -->
+    <div id="jitsiContainer" style="display:none; position:fixed; top:0; left:0; right:0; height:320px; z-index:10000; background:#1a1a1a; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+        <iframe id="jitsiFrame" allow="camera; microphone; display-capture; autoplay; clipboard-write" allowfullscreen style="width:100%; height:100%; border:0;"></iframe>
+        <div style="position:absolute; top:8px; right:8px; display:flex; gap:6px;">
+            <button onclick="toggleVisioMute()" id="visioMuteBtn" style="background:rgba(0,0,0,0.7); color:white; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:0.85rem;" title="Couper/activer le micro">🎤</button>
+            <button onclick="fermerVisio()" style="background:rgba(220,38,38,0.85); color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:0.85rem;" title="Fermer la visioconférence">✕ Fermer</button>
+        </div>
+    </div>
+
     <div class="connection-status disconnected" id="connectionStatus">⚪ Déconnecté</div>
     
     <div class="container">
@@ -427,6 +436,8 @@
             </div>
             <!-- Build 213.4 — Bouton d'invitation -->
             <button class="btn btn-full" style="background:#dbeafe; color:#1d4ed8; margin: 8px 0; font-weight: 600;" onclick="showInviteModal()">📤 Inviter des joueurs (lien à partager)</button>
+            <!-- Build 213.6 — Bouton visioconférence Jitsi -->
+            <button class="btn btn-full" style="background:#f3e8ff; color:#7c3aed; margin: 0 0 8px; font-weight: 600;" onclick="lancerVisio()">🎥 Lancer la visioconférence (Jitsi)</button>
             <h3 style="color: var(--gray); margin-bottom: 8px; font-size: 0.95rem;">Joueurs (<span id="playerCount">0</span>/4)</h3>
             <div class="players-list" id="lobbyPlayers"></div>
             <div id="hostControls" class="hidden" style="margin-top: 15px;">
@@ -457,6 +468,8 @@
         
         <!-- ÉCRAN JEU -->
         <div id="gameScreen" class="card hidden">
+            <!-- Build 213.6 — Bouton flottant visio (visible en partie) -->
+            <button id="visioFloatingBtn" onclick="lancerVisio()" title="Lancer la visioconférence" style="position:fixed; bottom:80px; right:16px; width:54px; height:54px; border-radius:50%; background:#7c3aed; color:white; border:none; font-size:1.4rem; box-shadow:0 4px 12px rgba(124,58,237,0.4); z-index:9998; cursor:pointer;">🎥</button>
             <div class="status-bar">
                 <div>🔄 Tour <strong id="turnNumber">1</strong></div>
                 <div class="turn-indicator" id="turnIndicator">🎯 ...</div>
@@ -3518,7 +3531,96 @@
         }
         // ═══════════════════════════════════════════════════════════════
         // FIN MODULE INVITATION
+        // ═══════════════════════════════════════════════════════════════        
         // ═══════════════════════════════════════════════════════════════
+        // MODULE VISIOCONFÉRENCE JITSI — Build 213.6
+        // ═══════════════════════════════════════════════════════════════
+        
+        const VISIO_CONFIG = {
+            BASE_URL: 'https://meet.jit.si/',
+            ROOM_PREFIX: 'Espoyr-',
+            BREAKPOINT_MOBILE: 768,  // sous cette largeur → nouvel onglet
+            HAUTEUR_IFRAME: 320       // px ; ajuste si tu veux plus/moins
+        };
+        
+        function buildVisioRoom() {
+            return VISIO_CONFIG.ROOM_PREFIX + (currentGameCode || 'demo');
+        }
+        
+        function buildVisioUrl() {
+            return VISIO_CONFIG.BASE_URL + buildVisioRoom();
+        }
+        
+        function lancerVisio() {
+            if (!currentGameCode) {
+                showError('Pas de code de partie. Crée ou rejoins une partie d\'abord.');
+                return;
+            }
+            const url = buildVisioUrl();
+            const isMobile = window.innerWidth < VISIO_CONFIG.BREAKPOINT_MOBILE;
+            
+            if (isMobile) {
+                // Mobile → nouvel onglet (Jitsi prend tout l'écran)
+                window.open(url, '_blank');
+                if (typeof sendSystemMessage === 'function') {
+                    sendSystemMessage('🎥 Visioconférence ouverte dans un nouvel onglet (' + buildVisioRoom() + ')');
+                }
+            } else {
+                // Desktop → iframe intégré en haut
+                ouvrirIframeVisio(url);
+            }
+        }
+        
+        function ouvrirIframeVisio(url) {
+            const container = document.getElementById('jitsiContainer');
+            const frame = document.getElementById('jitsiFrame');
+            if (!container || !frame) return;
+            
+            // Charger l'URL seulement si pas déjà chargée
+            if (frame.src !== url) {
+                frame.src = url;
+            }
+            container.style.display = 'block';
+            document.body.style.paddingTop = VISIO_CONFIG.HAUTEUR_IFRAME + 'px';
+            if (typeof sendSystemMessage === 'function') {
+                sendSystemMessage('🎥 Visioconférence lancée : ' + buildVisioRoom());
+            }
+        }
+        
+        function fermerVisio() {
+            const container = document.getElementById('jitsiContainer');
+            const frame = document.getElementById('jitsiFrame');
+            if (container) container.style.display = 'none';
+            if (frame) frame.src = ''; // arrête le stream
+            document.body.style.paddingTop = '';
+            if (typeof sendSystemMessage === 'function') {
+                sendSystemMessage('🎥 Visioconférence fermée');
+            }
+        }
+        
+        function toggleVisioMute() {
+            // Jitsi propose son propre bouton micro dans son interface ; ce bouton
+            // est ici juste un raccourci. Pour l'instant, on recharge l'iframe avec
+            // un paramètre #userInfo.startWithAudioMuted=true pour démarrer mute.
+            // Implémentation simple : recharger l'iframe avec un toggle de query string.
+            const frame = document.getElementById('jitsiFrame');
+            if (!frame || !frame.src) return;
+            try {
+                const url = new URL(frame.src);
+                const muted = url.searchParams.get('config.startWithAudioMuted') === 'true';
+                if (muted) {
+                    url.searchParams.delete('config.startWithAudioMuted');
+                } else {
+                    url.searchParams.set('config.startWithAudioMuted', 'true');
+                }
+                frame.src = url.toString();
+            } catch(e) { console.error('toggleVisioMute:', e); }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════
+        // FIN MODULE VISIO
+        // ═══════════════════════════════════════════════════════════════
+        
         
                 /**
          * Vérifier les paramètres URL pour reconnexion depuis email
