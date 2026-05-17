@@ -1,10 +1,10 @@
- <!-- V3(9) STOCK+COURSES TEST - Build 209 - index-01 -->
+ <!-- V3(12) STOCK+COURSES TEST - Build 212.1 - GESTION-BOTS-MVP+HOTFIX -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title># ESPOYR Multijoueur V3(9) STOCK+COURSES TEST</title>
+   <title># ESPOYR Multijoueur V3(12) STOCK+COURSES TEST</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -362,7 +362,7 @@
         <!-- ÉCRAN ACCUEIL -->
         <div id="homeScreen" class="card">
             <h1><img src="logo__g1_jaune_rond.png" alt="Logo ESPOYR" style="height: 1.5em; vertical-align: middle; margin-right: 8px;">ESPOYR</h1>
-            <p class="subtitle">Jeu collaboratif d'économie - V3(9) STOCK+COURSES TEST</p>
+            <p class="subtitle">Jeu collaboratif d'économie - V3(12) STOCK+COURSES TEST</p>
             <div class="error-message" id="errorMessage"></div>
             
             <div style="margin-bottom: 15px; text-align: center; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
@@ -2061,6 +2061,8 @@
         let coursesGestionDone = false;   // true quand le joueur a validé la liste ce tour
         let coursesDashboardOpen = false; // empêche les ouvertures multiples
         let coursesEtatJoueurs = {};      // { joueurId: { tour_0: [{caseId, montantBase, fait}] } }
+        // Build 211 — Exposition pour diagnostic console : window.coursesEtatJoueurs
+        try { window.coursesEtatJoueurs = coursesEtatJoueurs; } catch(e) {}
 
         // ========== REPRISE / TICKET JOUEUR (A+B) ==========
         const RESUME_KEY_PREFIX = 'ESPOYR_RESUME_';
@@ -4517,9 +4519,18 @@ function isAbsent(player) {
 
         function getMontantEffectifCourse(caseId) {
             var c = CASES[caseId];
-            if (!c || !c.stock) return 0;
-            var montantBase = c.stock.prixPassage;
+            if (!c) return 0;
             var coeffInflation = 1 + (inflationTauxActuel || 0);
+            // Montant de base : prixPassage (défini dans CASES.stock) ou montantBase de la liste
+            var montantBase = (c.stock && c.stock.prixPassage) ? c.stock.prixPassage : (function() {
+                var tousItems = [].concat(LISTES_COURSES_GROUPES.A||[], LISTES_COURSES_GROUPES.B||[], LISTES_COURSES_GROUPES.C||[]);
+                var found = tousItems.find(function(it) { return it.caseId === caseId; });
+                return found ? found.montantBase : 0;
+            })();
+            if (!montantBase) return 0;
+            // Sans module Stocks : prix base × inflation uniquement
+            if (!isStockActif() || !c.stock) return arrondir2(montantBase * coeffInflation);
+            // Avec module Stocks : + bonus équipement
             var act = COMPTABILITE.caisseActivites[caseId] || {};
             var nbEquip = (act.equipementA || 0) + (act.equipementB || 0);
             var coeffEquip = 1 + nbEquip * (gameConfig.STOCKS_EQUIP_BONUS || 0.10);
@@ -4527,10 +4538,15 @@ function isAbsent(player) {
         }
 
         function getStatutCourseItem(item) {
+            return getStatutCourseItemForPlayer(item, myPlayerId);
+        }
+
+        // Build 210 : version paramétrable (utilisée côté joueur ET côté bot)
+        function getStatutCourseItemForPlayer(item, playerId) {
             if (item.fait) return 'fait';
             var act = COMPTABILITE.caisseActivites[item.caseId];
             if (!act || !act.proprietaireId) return 'ferme';
-            if (act.proprietaireId === myPlayerId) return 'propre';
+            if (act.proprietaireId === playerId) return 'propre';
             if (isStockActif()) {
                 var c = CASES[item.caseId];
                 if (c && c.stock) {
@@ -4543,8 +4559,13 @@ function isAbsent(player) {
         }
 
         function getCoursesItemsActuels() {
+            return getCoursesItemsForPlayer(myPlayerId);
+        }
+
+        // Build 210 : version paramétrable (utilisée côté joueur ET côté bot)
+        function getCoursesItemsForPlayer(playerId) {
             var players = getOrderedPlayers();
-            var joueurIdx = players.findIndex(function(p) { return p.id === myPlayerId; });
+            var joueurIdx = players.findIndex(function(p) { return p.id === playerId; });
             if (joueurIdx < 0) joueurIdx = 0;
             var joueur = players[joueurIdx];
             var passagesDepart = joueur.passagesDepart || 0;
@@ -4552,7 +4573,7 @@ function isAbsent(player) {
             var grpKey = perm[passagesDepart % 3];
             var serie = passagesDepart >= 6 ? 3 : (passagesDepart >= 3 ? 2 : 1);
             return {
-                items: initCoursesJoueur(myPlayerId, joueurIdx, passagesDepart),
+                items: initCoursesJoueur(playerId, joueurIdx, passagesDepart),
                 joueurIdx: joueurIdx,
                 passagesDepart: passagesDepart,
                 grpKey: grpKey,
@@ -4757,65 +4778,105 @@ function isAbsent(player) {
             if (!c || !c.stock) return;
             var act = COMPTABILITE.caisseActivites[actId];
             if (!act) return;
-            
+
             var eff = getStockEffectif(actId);
             var stockCout = arrondir2(act.stockCout || 0);
             var capVente = arrondir2(stockCout * eff.margeEffective);
             var caisseE = arrondir2(act.stockCaisseE || 0);
-            var dette = arrondir2((act.stockEmprunts || []).reduce(function(s, e) { return s + (e.restant || 0); }, 0));
-            var nbClients = Math.floor(capVente / eff.prixPassage);
-            
-            var html = '<h3 style="margin:0 0 8px;">' + c.icon + ' ' + c.name + ' — Approvisionner</h3>';
-            
-            // Info prix avec effet équipement
-            html += '<div style="background:#f3f4f6;border-radius:8px;padding:8px;margin-bottom:10px;font-size:0.85rem;">';
-            html += '<div style="color:#a855f7;font-weight:600;">Passage client: ' + eff.prixPassage + '€ TTC</div>';
-            html += '<div>Coût marchandise (fixe): <b style="color:#2563eb;">' + eff.coutUnit + '€</b></div>';
-            html += '<div>Marge ×' + eff.margeEffective + (eff.nbEquip > 0 ? ' (base ×' + eff.margeBase + ' + 🔧' + eff.nbEquip + ')' : '') + '</div>';
-            html += '</div>';
-            
-            // État actuel
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:0.85rem;margin-bottom:10px;">';
-            html += '<span>Caisse: <b style="color:#22c55e;">' + caisseE + '€</b></span>';
-            html += '<span>Stock: <b style="color:#2563eb;">' + stockCout + '€</b> (' + nbClients + ' clients)</span>';
-            if (dette > 0) html += '<span>Dette: <b style="color:#ef4444;">-' + dette + '€</b></span>';
-            html += '</div>';
-            
-            // Input montant
-            html += '<div style="margin-bottom:10px;">';
-            html += '<label style="font-size:0.85rem;color:#6b7280;">Montant à investir en stock (€)</label>';
-            html += '<input type="number" id="stockApproMontant" value="' + eff.coutUnit + '" min="0" step="0.01" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;margin-top:4px;box-sizing:border-box;">';
-            html += '</div>';
-            
-            // Boutons rapides clients
-            html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
-            html += '<button class="btn" style="flex:1;background:#f59e0b;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockApproMontant\').value=' + eff.coutUnit + '">1 client<br>' + eff.coutUnit + '€</button>';
-            html += '<button class="btn" style="flex:1;background:#d97706;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockApproMontant\').value=' + arrondir2(eff.coutUnit * 2) + '">2 clients<br>' + arrondir2(eff.coutUnit * 2) + '€</button>';
-            html += '<button class="btn" style="flex:1;background:#b45309;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockApproMontant\').value=' + arrondir2(eff.coutUnit * 3) + '">3 clients<br>' + arrondir2(eff.coutUnit * 3) + '€</button>';
-            html += '</div>';
-            
-            // Actions rapides finance
-            html += '<div style="border-top:1px solid #e5e7eb;padding-top:8px;margin-bottom:10px;">';
-            html += '<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">Besoin de fonds ?</div>';
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
-            html += '<button class="btn" style="background:#22c55e;font-size:0.8rem;padding:8px;" onclick="stockInvestir(' + actId + ')">💰 Investir €</button>';
-            html += '<button class="btn" style="background:#ef4444;font-size:0.8rem;padding:8px;" onclick="stockEmprunter(' + actId + ')">🏦 Emprunt activité</button>';
-            html += '</div>';
-            if (caisseE > 0) {
-                html += '<button class="btn" style="width:100%;margin-top:6px;background:#dbeafe;color:#1e40af;font-size:0.8rem;padding:8px;" onclick="stockRetirer(' + actId + ')">💸 Retirer € → compte perso</button>';
-            }
             var caisseH = arrondirHash(act.stockCaisseH || 0);
-            if (caisseH > 0) {
-                html += '<button class="btn" style="width:100%;margin-top:6px;background:#fef9c3;color:#713f12;font-size:0.8rem;padding:8px;" onclick="stockRetirerHash(' + actId + ')">🔶 Retirer # → compte perso</button>';
+            var dette = arrondir2((act.stockEmprunts || []).reduce(function(s, e) { return s + (e.restant || 0); }, 0));
+            var capitalPropre = arrondir2(Math.max(0, caisseE - dette));
+            var stockRouge = capVente < eff.prixPassage;
+            var c1 = arrondir2(eff.coutUnit);
+            var c2 = arrondir2(eff.coutUnit * 2);
+            var c3 = arrondir2(eff.coutUnit * 3);
+
+            var html = '<h3 style="margin:0 0 10px;">' + c.icon + ' ' + (c.terme||c.name) + ' — Approvisionner</h3>';
+
+            // 4 lignes info
+            html += '<div style="background:#f3f4f6;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.87rem;">';
+            // Ligne 1 : Prix client
+            html += '<div style="display:flex;justify-content:space-between;padding-bottom:7px;border-bottom:1px solid #e5e7eb;margin-bottom:7px;">';
+            html += '<span style="color:#6b7280;">Prix client</span>';
+            html += '<span style="color:#a855f7;font-weight:700;">' + fmt(eff.prixPassage) + '€ TTC</span>';
+            html += '</div>';
+            // Ligne 2 : Stock actuel (rouge si < prixPassage)
+            var stockColor = stockRouge ? '#dc2626' : '#16a34a';
+            var stockAlert = stockRouge ? ' ⚠️' : ' ✅';
+            html += '<div style="display:flex;justify-content:space-between;padding-bottom:7px;border-bottom:1px solid #e5e7eb;margin-bottom:7px;">';
+            html += '<span style="color:#6b7280;">Stock actuel</span>';
+            html += '<span style="color:' + stockColor + ';font-weight:700;">' + fmt(capVente) + '€' + stockAlert + '</span>';
+            html += '</div>';
+            // Ligne 3 : Caisse
+            html += '<div style="display:flex;justify-content:space-between;padding-bottom:7px;border-bottom:1px solid #e5e7eb;margin-bottom:7px;">';
+            html += '<span style="color:#6b7280;">Caisse activité</span>';
+            html += '<span style="color:#22c55e;font-weight:700;">' + fmt(caisseE) + '€' + (caisseH > 0 ? ' / ' + caisseH.toFixed(1) + '#' : '') + '</span>';
+            html += '</div>';
+            // Ligne 4 : Coût marchandise
+            html += '<div style="display:flex;justify-content:space-between;">';
+            html += '<span style="color:#6b7280;">Coût marchandise</span>';
+            html += '<span style="font-weight:700;">' + fmt(eff.coutUnit) + '€ / client' + (eff.nbEquip > 0 ? ' (marge ×' + eff.margeEffective + ')' : '') + '</span>';
+            html += '</div>';
+            html += '</div>';
+
+            // Input montant
+            html += '<label style="font-size:0.85rem;color:#6b7280;">Montant à mettre en stock (€)</label>';
+            html += '<input type="number" id="stockApproMontant" value="' + c1 + '" min="0" step="0.01" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;margin-top:4px;box-sizing:border-box;">';
+            html += '<p style="font-size:0.78rem;color:#6b7280;margin:5px 0 12px;">1 client = ' + fmt(c1) + '€ · 2 = ' + fmt(c2) + '€ · 3 = ' + fmt(c3) + '€';
+            html += ' <span style="color:#3b82f6;cursor:pointer;text-decoration:underline;" onclick="toggleApproExpl()">Pourquoi ?</span></p>';
+            html += '<div id="approExpl" style="display:none;background:#eff6ff;border-radius:8px;padding:8px;font-size:0.8rem;color:#1e40af;margin-bottom:10px;line-height:1.5;">';
+            html += 'Tu achètes <b>' + fmt(eff.coutUnit) + '€</b> de marchandise pour servir 1 client à <b>' + fmt(eff.prixPassage) + '€</b>. ';
+            html += 'La marge (<b>×' + eff.margeEffective + '</b>) reste dans ta caisse après la vente. ';
+            html += 'Plus tu stockes, plus tu peux servir de clients avant de réapprovisionner.';
+            html += '</div>';
+
+            // Bouton transfert (expand inline)
+            html += '<div style="border-top:1px solid #e5e7eb;padding-top:10px;">';
+            html += '<button class="btn" style="width:100%;font-size:0.85rem;padding:8px;background:#f9fafb;color:#374151;border:1px solid #d1d5db;" onclick="toggleApproTransfert(' + actId + ')">💱 Transfert de fonds</button>';
+            html += '<div id="approTransfert" style="display:none;margin-top:8px;display:none;">';
+            html += '<div style="background:#f3f4f6;border-radius:8px;padding:8px;font-size:0.82rem;margin-bottom:8px;">';
+            html += '<div style="display:flex;justify-content:space-between;">';
+            html += '<span>Caisse : <b style="color:#22c55e;">' + fmt(caisseE) + '€</b></span>';
+            html += '<span>Perso : <b>' + fmt(arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId]?.euro || 0)) + '€</b></span>';
+            html += '</div>';
+            if (dette > 0) {
+                html += '<div style="font-size:0.76rem;color:#dc2626;margin-top:3px;">Dettes : ' + fmt(dette) + '€ — Capital propre retirable : <b>' + fmt(capitalPropre) + '€</b></div>';
             }
             html += '</div>';
-            
+            html += '<div style="display:grid;gap:5px;">';
+            html += '<button class="btn" style="text-align:left;padding:8px 10px;background:#dcfce7;color:#166534;font-size:0.82rem;" onclick="stockInvestir(' + actId + ')">';
+            html += '<b>💰 Investir €</b> — virer de ton compte perso vers la caisse<br><span style="font-size:0.73rem;opacity:0.8;">D:260 C:500</span></button>';
+            html += '<button class="btn" style="text-align:left;padding:8px 10px;background:#fee2e2;color:#991b1b;font-size:0.82rem;" onclick="stockEmprunter(' + actId + ')">';
+            html += '<b>🏦 Emprunter</b> — crédit bancaire affecté à l\'activité<br><span style="font-size:0.73rem;opacity:0.8;">D:260 C:164 + intérêts</span></button>';
+            if (capitalPropre > 0) {
+                html += '<button class="btn" style="text-align:left;padding:8px 10px;background:#dbeafe;color:#1e40af;font-size:0.82rem;" onclick="stockRetirer(' + actId + ')">';
+                html += '<b>💸 Retirer €</b> → compte perso — capital propre : <b>' + fmt(capitalPropre) + '€</b><br><span style="font-size:0.73rem;opacity:0.8;">D:500 C:260</span></button>';
+            } else if (caisseE > 0) {
+                html += '<button class="btn" style="text-align:left;padding:8px 10px;background:#f3f4f6;color:#9ca3af;font-size:0.82rem;cursor:not-allowed;" disabled>';
+                html += '💸 Retirer € — caisse engagée en dettes (' + fmt(dette) + '€)<br><span style="font-size:0.73rem;">D:500 C:260</span></button>';
+            }
+            if (caisseH > 0) {
+                html += '<button class="btn" style="text-align:left;padding:8px 10px;background:#fef9c3;color:#713f12;font-size:0.82rem;" onclick="stockRetirerHash(' + actId + ')">';
+                html += '<b>🔶 Retirer #</b> → compte perso — caisse # : <b>' + caisseH.toFixed(1) + '#</b><br><span style="font-size:0.73rem;opacity:0.8;">D:501 C:260</span></button>';
+            }
+            html += '</div></div></div>';
+
             var btns = '<button class="btn btn-primary" onclick="validerStockAppro(' + actId + ')">✅ Approvisionner</button>';
             btns += '<button class="btn btn-secondary" onclick="showStockDashboard()" style="margin-left:8px;">← Retour</button>';
-            
+
             showModal(html, btns);
         }
-        
+
+        function toggleApproExpl() {
+            var el = document.getElementById('approExpl');
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function toggleApproTransfert(actId) {
+            var el = document.getElementById('approTransfert');
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
         // ═══ MODULE STOCKS — Retirer caisse activité → compte perso ═══
         function stockRetirer(actId) {
             var c = CASES[actId];
@@ -4823,20 +4884,23 @@ function isAbsent(player) {
             var caisseE = arrondir2(act.stockCaisseE || 0);
             var stockCout = arrondir2(act.stockCout || 0);
             var dette = arrondir2((act.stockEmprunts || []).reduce(function(s, e) { return s + (e.restant || 0); }, 0));
+            var capitalPropre = arrondir2(Math.max(0, caisseE - dette));
             var persoEuro = arrondir2(COMPTABILITE.caisseJoueurs[myPlayerId]?.euro || 0);
 
-            var html = '<h3>' + c.icon + ' ' + c.name + ' — Retirer vers perso</h3>';
+            var html = '<h3>' + c.icon + ' ' + (c.terme||c.name) + ' — Retirer → perso</h3>';
             html += '<div style="background:#f3f4f6;border-radius:8px;padding:8px;margin-bottom:10px;font-size:0.82rem;">';
             html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
             html += '<span>Capital achat : <b>' + fmt(act.capital || c.prix) + '€</b></span>';
             html += '<span>En stock (immob.) : <b style="color:#dc2626;">-' + fmt(stockCout) + '€</b></span>';
-            if (dette > 0) html += '<span>Emprunts restants : <b style="color:#dc2626;">-' + fmt(dette) + '€</b></span>';
+            html += '<span>Caisse totale : <b>' + fmt(caisseE) + '€</b></span>';
+            if (dette > 0) html += '<span>Dettes restantes : <b style="color:#dc2626;">-' + fmt(dette) + '€</b></span>';
             html += '</div>';
             html += '<div style="border-top:1px solid #e5e7eb;margin-top:6px;padding-top:6px;">';
-            html += '<b>Disponible en caisse : <span style="color:#16a34a;">' + fmt(caisseE) + '€</span></b>';
-            html += '<span style="font-size:0.75rem;color:#6b7280;"> ← maximum retirable</span>';
+            html += '<b>Capital propre retirable : <span style="color:#16a34a;">' + fmt(capitalPropre) + '€</span></b>';
+            html += '<span style="font-size:0.75rem;color:#6b7280;"> = caisse − dettes</span>';
             html += '</div>';
-            if (stockCout > 0) html += '<p style="margin:4px 0 0;font-size:0.75rem;color:#6b7280;">Le reste (' + fmt(stockCout) + '€) est engagé en marchandises.</p>';
+            if (dette > 0) html += '<p style="margin:4px 0 0;font-size:0.75rem;color:#dc2626;">⚠️ ' + fmt(dette) + '€ de dettes en cours — non retirables.</p>';
+            if (stockCout > 0) html += '<p style="margin:4px 0 0;font-size:0.75rem;color:#6b7280;">' + fmt(stockCout) + '€ engagés en marchandises.</p>';
             html += '</div>';
 
             html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
@@ -4849,22 +4913,22 @@ function isAbsent(player) {
             html += '</div>';
 
             html += '<label style="font-size:0.85rem;color:#6b7280;">Montant à retirer (€)</label>';
-            html += '<input type="number" id="stockRetraitMontant" value="' + Math.min(50, caisseE) + '" min="0.01" max="' + caisseE + '" step="0.01" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;margin-top:4px;box-sizing:border-box;" oninput="updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ')">';
+            html += '<input type="number" id="stockRetraitMontant" value="' + Math.min(50, capitalPropre).toFixed(2) + '" min="0.01" max="' + capitalPropre + '" step="0.01" style="width:100%;padding:10px;font-size:1.1rem;text-align:center;font-weight:700;border:2px solid #d1d5db;border-radius:8px;margin-top:4px;box-sizing:border-box;" oninput="updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ',' + capitalPropre + ')">';
             html += '<div style="display:flex;gap:6px;margin-top:8px;">';
-            html += '<button class="btn" style="flex:1;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockRetraitMontant\').value=Math.min(25,' + caisseE + ').toFixed(2);updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ')">25€</button>';
-            html += '<button class="btn" style="flex:1;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockRetraitMontant\').value=Math.min(50,' + caisseE + ').toFixed(2);updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ')">50€</button>';
-            html += '<button class="btn" style="flex:1;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockRetraitMontant\').value=' + caisseE + ';updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ')">Tout</button>';
+            html += '<button class="btn" style="flex:1;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockRetraitMontant\').value=Math.min(25,' + capitalPropre + ').toFixed(2);updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ',' + capitalPropre + ')">25€</button>';
+            html += '<button class="btn" style="flex:1;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockRetraitMontant\').value=Math.min(50,' + capitalPropre + ').toFixed(2);updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ',' + capitalPropre + ')">50€</button>';
+            html += '<button class="btn" style="flex:1;font-size:0.8rem;padding:6px;" onclick="document.getElementById(\'stockRetraitMontant\').value=' + capitalPropre + ';updateStockRetraitDisplay(' + caisseE + ',' + persoEuro + ',' + capitalPropre + ')">Tout</button>';
             html += '</div>';
             html += '<p style="font-size:0.75rem;color:#6b7280;margin-top:6px;">Écriture : D:500 Caisse joueur / C:260 Capital activité</p>';
 
             showModal(html,
-                '<button class="btn btn-primary" onclick="validerStockRetrait(' + actId + ',' + caisseE + ')">✅ Valider le retrait</button>' +
+                '<button class="btn btn-primary" onclick="validerStockRetrait(' + actId + ',' + capitalPropre + ')">✅ Valider le retrait</button>' +
                 '<button class="btn btn-secondary" onclick="showStockAppro(' + actId + ')" style="margin-left:8px;">← Retour</button>');
         }
 
-        function updateStockRetraitDisplay(maxCaisse, persoEuro) {
+        function updateStockRetraitDisplay(maxCaisse, persoEuro, capitalPropre) {
             var v = arrondir2(parseFloat(document.getElementById('stockRetraitMontant')?.value) || 0);
-            var montant = Math.min(v, maxCaisse);
+            var montant = Math.min(v, capitalPropre);
             var ca = document.getElementById('srCaisseApres');
             var pa = document.getElementById('srPersoApres');
             if (ca) ca.textContent = fmt(arrondir2(maxCaisse - montant)) + '€';
@@ -5098,7 +5162,8 @@ function isAbsent(player) {
                 contexte: 'stock_capitalisation'
             });
             
-            sendSystemMessage(myName + ' investit ' + montant + '€ dans ' + c.icon + ' ' + c.name);
+            sendSystemMessage(myName + ' investit ' + fmt(montant) + '€ dans ' + c.icon + ' ' + (c.terme||c.name));
+            db.ref('parties/' + currentGameCode + '/players/' + myPlayerId + '/euro').set(caisse.euro);
             syncComptabiliteToFirebase();
             showStockAppro(actId);
         }
@@ -9093,21 +9158,186 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
             showScreen('homeScreen');
         }
         
-        // ========== ROBOTS IA ==========
+        // ========== ROBOTS IA — Build 212 refonte : gestion complète ==========
         function showAddBotModal() {
-            if (Object.keys(playersData).length >= 6) { alert('Partie complète (6 joueurs max) !'); return; }
+            const bots = Object.values(playersData).filter(p => p && p.isBot);
+            const inGame = !!(gameState && gameState.started);
             
-            const profilsList = Object.values(PROFILS_IA).map(p => 
-                `<button class="btn" style="margin: 3px; font-size: 0.8rem;" onclick="addBot('${p.id}')">${p.nom}</button>`
-            ).join('');
+            let html = '<h3>👥 Gestion des joueurs complémentaires</h3>';
             
-            showModal(`<h3>👥 Joueur complémentaire</h3>
-                <div style="margin-bottom:10px;">
-                    <button class="btn btn-primary" style="width:100%; margin-bottom:8px; font-size:0.95rem;" onclick="addBot('ALEATOIRE')">🎲 Aléatoire</button>
-                </div>
-                <p style="font-size:0.8rem; color:#6b7280; margin-bottom:6px;">Ou choisir un comportement :</p>
-                <div style="display:flex;flex-wrap:wrap;">${profilsList}</div>`,
-                `<button class="btn btn-secondary" onclick="closeModal()">Annuler</button>`);
+            // --- Liste des bots existants ---
+            if (bots.length > 0) {
+                html += '<p style="font-size:0.85rem;color:#6b7280;margin:8px 0 4px 0;"><strong>🤖 Bots actuels (' + bots.length + ') :</strong></p>';
+                bots.forEach(b => {
+                    const profilLib = PROFILS_IA[b.botProfil] ? PROFILS_IA[b.botProfil].nom : (b.botProfil || '?');
+                    const profEco = b.profil === 'creatif' ? '🎨 Créatif' : '🏛️ Contributif';
+                    const aaa = b.membreAAA ? ' ' + LOGO_AAA : '';
+                    html += '<div style="background:#f9fafb;padding:8px;border-radius:6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;border:1px solid #e5e7eb;">';
+                    html += '<div style="flex:1;font-size:0.88rem;">';
+                    html += '<div style="font-weight:600;">' + (b.avatar || '🤖') + ' ' + (b.name || '?') + aaa + '</div>';
+                    html += '<div style="font-size:0.78rem;color:#6b7280;">' + profilLib + ' · ' + profEco + '</div>';
+                    html += '</div>';
+                    html += '<div style="display:flex;gap:4px;">';
+                    html += '<button class="btn" style="font-size:0.75rem;padding:5px 10px;" onclick="editBotModal(\'' + b.id + '\')" title="Modifier">✏️</button>';
+                    if (!inGame) {
+                        html += '<button class="btn" style="font-size:0.75rem;padding:5px 10px;background:#fee2e2;color:#dc2626;" onclick="removeBot(\'' + b.id + '\')" title="Supprimer">🗑️</button>';
+                    }
+                    html += '</div></div>';
+                });
+                if (inGame) {
+                    html += '<p style="font-size:0.72rem;color:#9ca3af;margin:4px 0 10px 0;">🛡️ Suppression désactivée en cours de partie (préserve l\'intégrité comptable).</p>';
+                }
+            }
+            
+            // --- Ajout d'un nouveau bot ---
+            if (Object.keys(playersData).length < 6) {
+                html += '<p style="font-size:0.85rem;color:#6b7280;margin:12px 0 4px 0;"><strong>➕ Ajouter un bot :</strong></p>';
+                html += '<div style="margin-bottom:8px;">';
+                html += '<button class="btn btn-primary" style="width:100%;margin-bottom:6px;font-size:0.9rem;" onclick="addBot(\'ALEATOIRE\')">🎲 Aléatoire</button>';
+                html += '</div>';
+                html += '<p style="font-size:0.78rem;color:#6b7280;margin-bottom:4px;">Ou choisir un comportement :</p>';
+                html += '<div style="display:flex;flex-wrap:wrap;">';
+                Object.values(PROFILS_IA).forEach(p => {
+                    html += '<button class="btn" style="margin:3px;font-size:0.78rem;" onclick="addBot(\'' + p.id + '\')">' + p.nom + '</button>';
+                });
+                html += '</div>';
+            } else {
+                html += '<p style="font-size:0.85rem;color:#dc2626;margin:12px 0;">⚠️ Partie complète (6 joueurs max).</p>';
+            }
+            
+            showModal(html, '<button class="btn btn-secondary" onclick="closeModal()">Fermer</button>');
+        }
+        
+        // Build 212 — Modale d'édition d'un bot
+        function editBotModal(botId) {
+            const bot = playersData[botId];
+            if (!bot) { closeModal(); return; }
+            
+            const tousAv = ['🏠','🚗','⚡','🐢','🌿','👽','😺','🔧'];
+            const avPris = Object.values(playersData).filter(p => p && p.id !== botId).map(p => p.avatar).filter(Boolean);
+            var avDispo = tousAv.filter(a => !avPris.includes(a));
+            if (bot.avatar && !avDispo.includes(bot.avatar)) avDispo.push(bot.avatar);
+            
+            let html = '<h3>✏️ Modifier ' + (bot.avatar || '🤖') + ' ' + (bot.name || '') + '</h3>';
+            html += '<div style="display:grid;gap:10px;">';
+            
+            html += '<div>';
+            html += '<label style="font-size:0.85rem;font-weight:bold;">Nom</label>';
+            html += '<input type="text" id="editBotName" value="' + (bot.name || '').replace(/"/g, '&quot;') + '" maxlength="20" style="width:100%;padding:8px;margin-top:4px;">';
+            html += '</div>';
+            
+            html += '<div>';
+            html += '<label style="font-size:0.85rem;font-weight:bold;">Avatar</label>';
+            html += '<select id="editBotAvatar" style="width:100%;padding:8px;margin-top:4px;font-size:1.2rem;">';
+            avDispo.forEach(a => {
+                html += '<option value="' + a + '"' + (a === bot.avatar ? ' selected' : '') + '>' + a + '</option>';
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            html += '<div>';
+            html += '<label style="font-size:0.85rem;font-weight:bold;">Profil IA (comportement)</label>';
+            html += '<select id="editBotProfil" style="width:100%;padding:8px;margin-top:4px;">';
+            Object.values(PROFILS_IA).forEach(p => {
+                html += '<option value="' + p.id + '"' + (p.id === bot.botProfil ? ' selected' : '') + '>' + p.nom + '</option>';
+            });
+            html += '</select>';
+            html += '</div>';
+            
+            html += '</div>';
+            
+            const inGame = !!(gameState && gameState.started);
+            if (inGame) {
+                html += '<p style="font-size:0.75rem;color:#9ca3af;margin-top:10px;">🛡️ Profil économique et appartenance AAA non modifiables en cours de partie.</p>';
+            }
+            
+            showModal(html, 
+                '<button class="btn btn-secondary" onclick="showAddBotModal()">Annuler</button>' +
+                '<button class="btn btn-primary" onclick="saveBotEdits(\'' + botId + '\')" style="margin-left:8px;">✅ Enregistrer</button>'
+            );
+        }
+        
+        // Build 212 — Enregistrer les modifications d'un bot
+        async function saveBotEdits(botId) {
+            const newName = (document.getElementById('editBotName').value || '').trim();
+            const newAvatar = document.getElementById('editBotAvatar').value;
+            const newProfil = document.getElementById('editBotProfil').value;
+            
+            if (!newName) { alert('Le nom ne peut pas être vide.'); return; }
+            
+            // Vérification doublon de nom (insensible à la casse)
+            const autresNoms = Object.values(playersData)
+                .filter(p => p && p.id !== botId)
+                .map(p => (p.name || '').toLowerCase());
+            if (autresNoms.includes(newName.toLowerCase())) {
+                alert('Ce nom est déjà utilisé par un autre joueur.');
+                return;
+            }
+            
+            try {
+                const updates = {};
+                updates['parties/' + currentGameCode + '/players/' + botId + '/name'] = newName;
+                updates['parties/' + currentGameCode + '/players/' + botId + '/avatar'] = newAvatar;
+                updates['parties/' + currentGameCode + '/players/' + botId + '/botProfil'] = newProfil;
+                await db.ref().update(updates);
+                
+                // Mise à jour locale immédiate (le listener Firebase étant async)
+                if (playersData[botId]) {
+                    playersData[botId].name = newName;
+                    playersData[botId].avatar = newAvatar;
+                    playersData[botId].botProfil = newProfil;
+                }
+                
+                const profLib = PROFILS_IA[newProfil] ? PROFILS_IA[newProfil].nom : newProfil;
+                sendSystemMessage('✏️ Bot modifié : ' + newAvatar + ' ' + newName + ' (' + profLib + ')');
+                closeModal();
+                setTimeout(function() { showAddBotModal(); }, 200);
+            } catch(e) {
+                console.error('Erreur saveBotEdits:', e);
+                alert('Erreur lors de l\'enregistrement.');
+            }
+        }
+        
+        // Build 212 — Suppression d'un bot (lobby uniquement)
+        async function removeBot(botId) {
+            const bot = playersData[botId];
+            if (!bot) return;
+            
+            if (gameState && gameState.started) {
+                alert('Suppression désactivée en cours de partie pour préserver l\'intégrité comptable.');
+                return;
+            }
+            
+            if (!confirm('Supprimer le bot ' + (bot.avatar || '🤖') + ' ' + (bot.name || '') + ' ?')) return;
+            
+            try {
+                // 1) Retirer de Firebase
+                await db.ref('parties/' + currentGameCode + '/players/' + botId).remove();
+                
+                // Suppression locale immédiate (le listener Firebase étant async)
+                if (playersData[botId]) delete playersData[botId];
+                
+                // 2) Nettoyage comptable local
+                if (COMPTABILITE.caisseJoueurs && COMPTABILITE.caisseJoueurs[botId]) {
+                    delete COMPTABILITE.caisseJoueurs[botId];
+                }
+                if (COMPTABILITE.parJoueur && COMPTABILITE.parJoueur[botId]) {
+                    delete COMPTABILITE.parJoueur[botId];
+                }
+                if (COMPTABILITE.potAAA && COMPTABILITE.potAAA.membres) {
+                    COMPTABILITE.potAAA.membres = COMPTABILITE.potAAA.membres.filter(id => id !== botId);
+                }
+                
+                // 3) Sync
+                await syncComptabiliteToFirebase();
+                
+                sendSystemMessage('🗑️ Bot supprimé : ' + (bot.avatar || '🤖') + ' ' + (bot.name || ''));
+                closeModal();
+                setTimeout(function() { showAddBotModal(); }, 200);
+            } catch(e) {
+                console.error('Erreur removeBot:', e);
+                alert('Erreur lors de la suppression.');
+            }
         }
         
         // ========== CONFIGURATION PARTIE ==========
@@ -10931,43 +11161,133 @@ function initSystemeDe() {
                 arrieresResult = await payerArrieres(myPlayerId);
             }
 
-            // ========== 9. PÉNALITÉ COURSES NON FAITES ==========
-            let coursesPenaliteTotal = 0;
-            let coursesPenaliteItems = [];
-            if (isCoursesActif()) {
-                var ctxL1 = getCoursesItemsActuels();
-                for (var ci = 0; ci < ctxL1.items.length; ci++) {
-                    var itL1 = ctxL1.items[ci];
-                    if (itL1.fait) continue;
+            // ========== 9. PÉNALITÉ COURSES NON FAITES (Build 210 — refonte) ==========
+            // Règle :
+            //   - Item non acheté pendant le tour → prélèvement forcé au passage Ligne 1.
+            //   - Part « achat de base » (×1.00) : prix local TTC complet, va à HORS_CIRCUIT.
+            //   - Part « pénalité » (×0.10 du HT, SANS TVA) : convertie au taux 1#=1€
+            //     puis émise au Pot AAA (avec traçabilité bidirectionnelle).
+            //   - Statuts exclus : 'fait' (déjà acheté) et 'propre' (commerce du joueur).
+            //   - TVA correctement comptabilisée (corrige bug Build 209 — TVA prélevée
+            //     mais non enregistrée au ledger).
+            let coursesPenaliteTotal = 0;       // Total drainé sur caisse € (base TTC + pénalité €)
+            let coursesPenaliteHashTotal = 0;    // Total # créés au Pot AAA
+            let coursesPenaliteItems = [];       // Détail par item (pour la modale)
+            // Build 211 — Correctif passage décalé :
+            // passagesDepart a déjà été incrémenté (ligne ~10875). On doit donc
+            // récupérer la liste du passage QUI VIENT DE SE TERMINER (passages - 1),
+            // pas la nouvelle liste fraîche du passage qui commence.
+            var _opL1 = getOrderedPlayers();
+            var _idxL1 = _opL1.findIndex(function(p) { return p.id === myPlayerId; });
+            if (_idxL1 < 0) _idxL1 = 0;
+            var _jL1 = _opL1[_idxL1];
+            var _passActuels = _jL1.passagesDepart || 0;
+            var _passPenalite = _passActuels - 1;
+            var _itemsPenL1 = [];
+            if (_passPenalite >= 0 && coursesEtatJoueurs[myPlayerId]) {
+                _itemsPenL1 = coursesEtatJoueurs[myPlayerId]['passage_' + _passPenalite] || [];
+                // Fallback : si la liste du passage précédent n'existe pas (sync différé ?),
+                // tenter celle du passage actuel par sécurité.
+                if (_itemsPenL1.length === 0 && coursesEtatJoueurs[myPlayerId]['passage_' + _passActuels]) {
+                    _itemsPenL1 = coursesEtatJoueurs[myPlayerId]['passage_' + _passActuels];
+                }
+            }
+            if (isCoursesActif() && _itemsPenL1.length > 0) {
+                for (var ci = 0; ci < _itemsPenL1.length; ci++) {
+                    var itL1 = _itemsPenL1[ci];
+                    var statutL1 = getStatutCourseItem(itL1);
+                    if (statutL1 === 'fait' || statutL1 === 'propre') continue;
                     var cL1 = CASES[itL1.caseId];
                     if (!cL1) continue;
-                    var montantL1 = arrondir2(itL1.montantBase * (1 + (inflationTauxActuel || 0)));
-                    if (isStockActif() && cL1.stock) montantL1 = getMontantEffectifCourse(itL1.caseId);
+
+                    // === Calcul des montants ===
+                    var baseTtcL1 = arrondir2(itL1.montantBase * (1 + (inflationTauxActuel || 0)));
+                    if (isStockActif() && cL1.stock) baseTtcL1 = getMontantEffectifCourse(itL1.caseId);
                     var tvaPctL1 = (cL1.stock && cL1.stock.tvaPct) ? cL1.stock.tvaPct : 0.21;
-                    var tvaL1 = arrondir2(montantL1 * tvaPctL1 / (1 + tvaPctL1));
-                    var htL1 = arrondir2(montantL1 - tvaL1);
+                    var tvaL1 = arrondir2(baseTtcL1 * tvaPctL1 / (1 + tvaPctL1));
+                    var htL1 = arrondir2(baseTtcL1 - tvaL1);
+                    var penaliteEuroL1 = arrondir2(htL1 * 0.10);       // 10% du HT, sans TVA
+                    var penaliteHashL1 = arrondirHash(penaliteEuroL1); // Taux 1#=1€ (arrondi 0.5)
+                    var totalPreleveL1 = arrondir2(baseTtcL1 + penaliteEuroL1);
 
-                    // Payer si possible
-                    var payeL1 = arrondir2(Math.min(montantL1, Math.max(0, caisse.euro)));
-                    caisse.euro = arrondir2((caisse.euro || 0) - payeL1);
+                    // === Prélèvement caisse joueur (best effort) ===
+                    var prelevL1 = arrondir2(Math.min(totalPreleveL1, Math.max(0, caisse.euro)));
+                    caisse.euro = arrondir2((caisse.euro || 0) - prelevL1);
 
-                    // Créditer importation
+                    // === ÉCRITURE 1 — Achat de base : HT + TVA → caisse joueur ===
+                    if (htL1 > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Import Ligne 1 base ' + (cL1.terme || cL1.name),
+                            compteDebit: 613, compteCredit: 500,
+                            montantEuro: htL1,
+                            contexte: 'horsCircuit'
+                        });
+                    }
+                    if (tvaL1 > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'TVA Import Ligne 1 ' + (cL1.terme || cL1.name) + ' ' + Math.round(tvaPctL1 * 100) + '%',
+                            compteDebit: 635, compteCredit: 500,
+                            montantEuro: tvaL1,
+                            contexte: 'horsCircuit'
+                        });
+                    }
+
+                    // === ÉCRITURE 2 — Recette HORS_CIRCUIT ===
                     COMPTABILITE.horsCircuit = COMPTABILITE.horsCircuit || { solde: 0, recettes: 0, journal: [] };
                     COMPTABILITE.horsCircuit.solde = arrondir2((COMPTABILITE.horsCircuit.solde || 0) + htL1);
                     COMPTABILITE.horsCircuit.recettes = arrondir2((COMPTABILITE.horsCircuit.recettes || 0) + htL1);
                     if (!COMPTABILITE.horsCircuit.grandLivre) COMPTABILITE.horsCircuit.grandLivre = { 550: 0, 792: 0 };
                     COMPTABILITE.horsCircuit.grandLivre[550] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[550] || 0) + htL1);
                     COMPTABILITE.horsCircuit.grandLivre[792] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[792] || 0) + htL1);
+                    enregistrerEcriture({
+                        joueurId: 'HORS_CIRCUIT',
+                        libelle: 'Recette import Ligne 1 ' + (cL1.terme || cL1.name),
+                        compteDebit: 550, compteCredit: 792,
+                        montantEuro: htL1,
+                        contexte: 'horsCircuit'
+                    });
 
-                    enregistrerEcriture({ joueurId: myPlayerId, libelle: 'Pénalité grande surface ' + (cL1.terme||cL1.name), compteDebit: 613, compteCredit: 500, montantEuro: htL1, contexte: 'horsCircuit' });
-                    enregistrerEcriture({ joueurId: 'HORS_CIRCUIT', libelle: 'Import pénalité ' + (cL1.terme||cL1.name), compteDebit: 550, compteCredit: 792, montantEuro: htL1, contexte: 'horsCircuit' });
+                    // === ÉCRITURE 3 — Conversion € → # (charge joueur, SANS TVA) ===
+                    if (penaliteEuroL1 > 0) {
+                        enregistrerEcriture({
+                            joueurId: myPlayerId,
+                            libelle: 'Pénalité courses non faites ' + (cL1.terme || cL1.name) + ' +10%',
+                            compteDebit: 658, compteCredit: 500,
+                            montantEuro: penaliteEuroL1,
+                            contexte: 'penalite_courses_l1',
+                            details: { destination: 'POT_AAA', taux: 1.0, montantHashCree: penaliteHashL1 }
+                        });
+                    }
+
+                    // === ÉCRITURE 4 — Émission # au Pot AAA (avec traçabilité € d'origine) ===
+                    if (penaliteHashL1 > 0) {
+                        COMPTABILITE.potAAA = COMPTABILITE.potAAA || { solde: 0, circulationHash: 0, membres: [], creances: {}, journal: [] };
+                        COMPTABILITE.potAAA.solde = arrondirHash((COMPTABILITE.potAAA.solde || 0) + penaliteHashL1);
+                        enregistrerEcriture({
+                            joueurId: 'POT_AAA',
+                            libelle: 'Émission # depuis pénalité ' + myName + ' / ' + (cL1.terme || cL1.name),
+                            compteDebit: 580, compteCredit: 135,
+                            montantEspoyr: penaliteHashL1,
+                            contexte: 'penalite_courses_l1',
+                            details: { sourceJoueur: myPlayerId, montantEuroOrigine: penaliteEuroL1, taux: 1.0 }
+                        });
+                    }
 
                     itL1.fait = true;
-                    coursesPenaliteTotal = arrondir2(coursesPenaliteTotal + payeL1);
-                    coursesPenaliteItems.push({ nom: cL1.objet || cL1.name, montant: payeL1 });
+                    coursesPenaliteTotal = arrondir2(coursesPenaliteTotal + prelevL1);
+                    coursesPenaliteHashTotal = arrondirHash(coursesPenaliteHashTotal + penaliteHashL1);
+                    coursesPenaliteItems.push({
+                        nom: cL1.objet || cL1.name,
+                        montant: prelevL1,            // total drainé (compat modale actuelle)
+                        montantBase: baseTtcL1,       // pour enrichissement modale (hunk suivant)
+                        penalite: penaliteEuroL1,
+                        penaliteHash: penaliteHashL1
+                    });
                 }
                 if (coursesPenaliteTotal > 0) {
-                    sendSystemMessage('🏪 ' + myName + ' : courses non faites → grande surface forcée −' + fmt(coursesPenaliteTotal) + '€ → Importation');
+                    sendSystemMessage('🏪 ' + myName + ' : courses non faites → import +10% au profit du Pot AAA (−' + fmt(coursesPenaliteTotal) + '€, +' + fmt(coursesPenaliteHashTotal) + '#)');
                 }
             }
             
@@ -11184,16 +11504,26 @@ function initSystemeDe() {
                     </div>`;
             }
 
-            // --- Pénalité courses non faites ---
+            // --- Pénalité courses non faites (Build 210 — refonte) ---
             if (coursesPenaliteTotal > 0) {
+                const detailItemsL1 = coursesPenaliteItems.map(i => {
+                    const baseTxt = fmt(i.montantBase !== undefined ? i.montantBase : i.montant);
+                    const penTxt = (i.penalite > 0) ? ' + ' + fmt(i.penalite) + '€ pén.' : '';
+                    return i.nom + ' (' + baseTxt + '€' + penTxt + ')';
+                }).join(' · ');
                 modalHtml += `
-                    <div style="background:#fff7ed;padding:8px;border-radius:8px;margin-bottom:8px;border:1px solid #fed7aa;">
-                        <div style="display:flex;justify-content:space-between;">
-                            <span style="font-weight:bold;color:#c2410c;">🏪 Courses non faites → Grande surface</span>
-                            <span style="font-weight:600;color:#c2410c;">-${fmt(coursesPenaliteTotal)}€</span>
+                    <div style="background:#fff7ed;padding:10px;border-radius:8px;margin-bottom:8px;border:1px solid #fed7aa;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-weight:bold;color:#c2410c;">🏪 Courses non faites → Import Ligne 1</span>
+                            <span style="font-weight:bold;color:#c2410c;font-size:1.05rem;">-${fmt(coursesPenaliteTotal)}€</span>
                         </div>
-                        <p style="margin:4px 0 0;font-size:0.8rem;color:#9a3412;">
-                            ${coursesPenaliteItems.map(i => i.nom + ' ('+fmt(i.montant)+'€)').join(' · ')} → Importation
+                        ${coursesPenaliteHashTotal > 0 ? `
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:6px;border-top:1px dashed #fed7aa;">
+                            <span style="font-size:0.85rem;color:#9a3412;">${LOGO_AAA} dont pénalité +10% → Pot AAA</span>
+                            <span style="font-weight:600;color:#059669;font-size:0.95rem;">+${fmt(coursesPenaliteHashTotal)}#</span>
+                        </div>` : ''}
+                        <p style="margin:6px 0 0;font-size:0.78rem;color:#9a3412;">
+                            ${detailItemsL1}
                         </p>
                     </div>`;
             }
@@ -15288,7 +15618,7 @@ function initSystemeDe() {
             const recettesMoyennes = calculerRecettesMoyennesEtat();
             
             // Spirale détectée si intérêts > recettes moyennes
-            if (interetsPrevus > recettesMoyennes && dette > 500 && !spiraleModalShown) {
+            if (interetsPrevus > recettesMoyennes && dette > 500 && (gameState.turn || 1) >= 3 && !spiraleModalShown) {
                 spiraleModalShown = true;
                 
                 // Journal État
@@ -15488,7 +15818,7 @@ function initSystemeDe() {
                 var item = items[i];
                 if (item.fait) continue;
 
-                var statut = getStatutCourseItem(item);
+                var statut = getStatutCourseItemForPlayer(item, bot.id);
 
                 // Grande surface pour ferme/rupture
                 if (statut === 'ferme' || statut === 'rupture') {
@@ -15889,6 +16219,122 @@ function initSystemeDe() {
                     // Les messages détaillés sont envoyés dans payerArrieres
                 }
                 
+                // ========== PÉNALITÉ COURSES NON FAITES (BOT) — Build 210 ==========
+                // Symétrique du bloc joueur humain dans handleSalary.
+                // Règle : item non acheté pendant le tour → prélèvement forcé ×1.10
+                //   - Base TTC (×1.00) vers HORS_CIRCUIT, avec TVA correctement comptabilisée
+                //   - Pénalité (×0.10 du HT, sans TVA) convertie 1#=1€ et émise au Pot AAA
+                // Build 211 — Correctif passage décalé pour le bot :
+                // passagesBot a déjà été incrémenté (ligne ~15917). On récupère la liste
+                // du passage qui vient de se terminer.
+                var _opBotL1 = getOrderedPlayers();
+                var _idxBotL1 = _opBotL1.findIndex(function(p) { return p.id === bot.id; });
+                if (_idxBotL1 < 0) _idxBotL1 = 0;
+                var _jBotL1 = _opBotL1[_idxBotL1];
+                var _passActuelsBot = _jBotL1.passagesDepart || 0;
+                var _passPenaliteBot = _passActuelsBot - 1;
+                var _itemsPenBotL1 = [];
+                if (_passPenaliteBot >= 0 && coursesEtatJoueurs[bot.id]) {
+                    _itemsPenBotL1 = coursesEtatJoueurs[bot.id]['passage_' + _passPenaliteBot] || [];
+                    if (_itemsPenBotL1.length === 0 && coursesEtatJoueurs[bot.id]['passage_' + _passActuelsBot]) {
+                        _itemsPenBotL1 = coursesEtatJoueurs[bot.id]['passage_' + _passActuelsBot];
+                    }
+                }
+                if (isCoursesActif() && _itemsPenBotL1.length > 0) {
+                    var botPenaliteTotal = 0;
+                    var botPenaliteHashTotal = 0;
+                    for (var ciBot = 0; ciBot < _itemsPenBotL1.length; ciBot++) {
+                        var itBotL1 = _itemsPenBotL1[ciBot];
+                        var statutBotL1 = getStatutCourseItemForPlayer(itBotL1, bot.id);
+                        if (statutBotL1 === 'fait' || statutBotL1 === 'propre') continue;
+                        var cBotL1 = CASES[itBotL1.caseId];
+                        if (!cBotL1) continue;
+                        
+                        // === Calcul des montants ===
+                        var baseTtcBotL1 = arrondir2(itBotL1.montantBase * (1 + (inflationTauxActuel || 0)));
+                        if (isStockActif() && cBotL1.stock) baseTtcBotL1 = getMontantEffectifCourse(itBotL1.caseId);
+                        var tvaPctBotL1 = (cBotL1.stock && cBotL1.stock.tvaPct) ? cBotL1.stock.tvaPct : 0.21;
+                        var tvaBotL1 = arrondir2(baseTtcBotL1 * tvaPctBotL1 / (1 + tvaPctBotL1));
+                        var htBotL1 = arrondir2(baseTtcBotL1 - tvaBotL1);
+                        var penaliteEuroBotL1 = arrondir2(htBotL1 * 0.10);
+                        var penaliteHashBotL1 = arrondirHash(penaliteEuroBotL1);
+                        var totalPreleveBotL1 = arrondir2(baseTtcBotL1 + penaliteEuroBotL1);
+                        
+                        // === Prélèvement caisse bot (best effort) ===
+                        var prelevBotL1 = arrondir2(Math.min(totalPreleveBotL1, Math.max(0, caisse.euro)));
+                        caisse.euro = arrondir2((caisse.euro || 0) - prelevBotL1);
+                        
+                        // === ÉCRITURE 1 — Achat de base : HT + TVA ===
+                        if (htBotL1 > 0) {
+                            enregistrerEcriture({
+                                joueurId: bot.id,
+                                libelle: 'Import Ligne 1 base ' + (cBotL1.terme || cBotL1.name),
+                                compteDebit: 613, compteCredit: 500,
+                                montantEuro: htBotL1,
+                                contexte: 'horsCircuit'
+                            });
+                        }
+                        if (tvaBotL1 > 0) {
+                            enregistrerEcriture({
+                                joueurId: bot.id,
+                                libelle: 'TVA Import Ligne 1 ' + (cBotL1.terme || cBotL1.name) + ' ' + Math.round(tvaPctBotL1 * 100) + '%',
+                                compteDebit: 635, compteCredit: 500,
+                                montantEuro: tvaBotL1,
+                                contexte: 'horsCircuit'
+                            });
+                        }
+                        
+                        // === ÉCRITURE 2 — Recette HORS_CIRCUIT ===
+                        COMPTABILITE.horsCircuit = COMPTABILITE.horsCircuit || { solde: 0, recettes: 0, journal: [] };
+                        COMPTABILITE.horsCircuit.solde = arrondir2((COMPTABILITE.horsCircuit.solde || 0) + htBotL1);
+                        COMPTABILITE.horsCircuit.recettes = arrondir2((COMPTABILITE.horsCircuit.recettes || 0) + htBotL1);
+                        if (!COMPTABILITE.horsCircuit.grandLivre) COMPTABILITE.horsCircuit.grandLivre = { 550: 0, 792: 0 };
+                        COMPTABILITE.horsCircuit.grandLivre[550] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[550] || 0) + htBotL1);
+                        COMPTABILITE.horsCircuit.grandLivre[792] = arrondir2((COMPTABILITE.horsCircuit.grandLivre[792] || 0) + htBotL1);
+                        enregistrerEcriture({
+                            joueurId: 'HORS_CIRCUIT',
+                            libelle: 'Recette import Ligne 1 ' + (cBotL1.terme || cBotL1.name),
+                            compteDebit: 550, compteCredit: 792,
+                            montantEuro: htBotL1,
+                            contexte: 'horsCircuit'
+                        });
+                        
+                        // === ÉCRITURE 3 — Conversion € → # (charge bot, SANS TVA) ===
+                        if (penaliteEuroBotL1 > 0) {
+                            enregistrerEcriture({
+                                joueurId: bot.id,
+                                libelle: 'Pénalité courses non faites ' + (cBotL1.terme || cBotL1.name) + ' +10%',
+                                compteDebit: 658, compteCredit: 500,
+                                montantEuro: penaliteEuroBotL1,
+                                contexte: 'penalite_courses_l1',
+                                details: { destination: 'POT_AAA', taux: 1.0, montantHashCree: penaliteHashBotL1 }
+                            });
+                        }
+                        
+                        // === ÉCRITURE 4 — Émission # au Pot AAA ===
+                        if (penaliteHashBotL1 > 0) {
+                            COMPTABILITE.potAAA = COMPTABILITE.potAAA || { solde: 0, circulationHash: 0, membres: [], creances: {}, journal: [] };
+                            COMPTABILITE.potAAA.solde = arrondirHash((COMPTABILITE.potAAA.solde || 0) + penaliteHashBotL1);
+                            enregistrerEcriture({
+                                joueurId: 'POT_AAA',
+                                libelle: 'Émission # depuis pénalité ' + bot.name + ' / ' + (cBotL1.terme || cBotL1.name),
+                                compteDebit: 580, compteCredit: 135,
+                                montantEspoyr: penaliteHashBotL1,
+                                contexte: 'penalite_courses_l1',
+                                details: { sourceJoueur: bot.id, montantEuroOrigine: penaliteEuroBotL1, taux: 1.0 }
+                            });
+                        }
+                        
+                        itBotL1.fait = true;
+                        botPenaliteTotal = arrondir2(botPenaliteTotal + prelevBotL1);
+                        botPenaliteHashTotal = arrondirHash(botPenaliteHashTotal + penaliteHashBotL1);
+                    }
+                    if (botPenaliteTotal > 0) {
+                        await db.ref(`parties/${currentGameCode}/players/${bot.id}/euro`).set(caisse.euro);
+                        sendSystemMessage('🤖🏪 ' + bot.name + ' : courses non faites → import +10% au profit du Pot AAA (−' + fmt(botPenaliteTotal) + '€, +' + fmt(botPenaliteHashTotal) + '#)');
+                    }
+                }
+                
                 await syncComptabiliteToFirebase();
                 
                 if (complementAAA > 0) {
@@ -15933,6 +16379,26 @@ function initSystemeDe() {
                 } else if (!owner && collectifEstEligible(position)) {
                     // ═══ ACHAT COLLECTIF : bot déclenche ═══
                     await handleCollectifAchat(position, botId);
+                } else if (!owner && (caisse.euro || 0) < c.prix) {
+                    // Bot n'a pas assez — emprunte pour ses 2 premières activités
+                    const nbActsBot = Object.values(COMPTABILITE.caisseActivites || {})
+                        .filter(a => a.proprietaireId === botId).length;
+                    if (nbActsBot < 2 && profil.id !== 'PRUDENT') {
+                        const aEmprunter = arrondir2(c.prix - (caisse.euro || 0) + 10); // +10€ marge
+                        await comptaEmprunt(botId, aEmprunter);
+                        sendSystemMessage(`${bot.name} emprunte ${fmt(aEmprunter)}€ pour acheter ${c.icon} ${c.name}`);
+                        await db.ref(`parties/${currentGameCode}/players/${botId}/euro`).set(COMPTABILITE.caisseJoueurs[botId].euro);
+                        await syncComptabiliteToFirebase();
+                        // Maintenant la caisse est suffisante → achat
+                        await comptaAchatActivite(botId, position, c.prix);
+                        const newCaisse = COMPTABILITE.caisseJoueurs[botId];
+                        await db.ref(`parties/${currentGameCode}/players/${botId}`).update({
+                            euro: newCaisse.euro, espoyr: newCaisse.espoyr
+                        });
+                        await gameRef.child(`activites/${position}`).set(botId);
+                        await syncComptabiliteToFirebase();
+                        sendSystemMessage(`${bot.name} achète ${c.icon} ${c.name} (via emprunt)`);
+                    }
                 } else if (!owner && (caisse.euro || 0) >= c.prix) {
                     // Décision achat
                     const shouldBuy = profil.acheteToujours || (caisse.euro || 0) >= c.prix * 1.5;
