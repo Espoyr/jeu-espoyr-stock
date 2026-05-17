@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213.4 - INVITE-LINK -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.5 - GMAIL-SHARE -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -3407,12 +3407,12 @@
         }
         
         function buildInviteMessage() {
-            const code = currentGameCode || '------';
             const lien = buildInviteLink();
-            return 'Rejoins-moi sur ESPOYR !\n\n' +
-                   'Code de la partie : ' + code + '\n' +
-                   'Lien direct : ' + lien + '\n\n' +
-                   'Clique sur le lien, entre ton prénom et joue 🎮';
+            return 'Rejoins-moi sur ESPOYR !\n' +
+                   'Clique sur le lien\n' +
+                   lien + '\n' +
+                   '1) Entre ton prénom\n' +
+                   '2) Rejoindre une partie';
         }
         
         function showInviteModal() {
@@ -3444,7 +3444,7 @@
                 '<div style="margin:12px 0;">' +
                   '<p style="font-size:0.85rem;font-weight:bold;margin-bottom:6px;">Partager via :</p>' +
                   '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
-                    '<button class="btn" style="flex:1;min-width:90px;background:#fee2e2;color:#dc2626;font-size:0.85rem;padding:8px;" onclick="inviteViaEmail()">📧 Email</button>' +
+                    '<button class="btn" style="flex:1;min-width:90px;background:#fee2e2;color:#dc2626;font-size:0.85rem;padding:8px;" onclick="inviteViaGmail()">📮 Gmail</button>' +
                     '<button class="btn" style="flex:1;min-width:90px;background:#dcfce7;color:#16a34a;font-size:0.85rem;padding:8px;" onclick="inviteViaWhatsApp()">💬 WhatsApp</button>' +
                     (hasWebShare ? '<button class="btn" style="flex:1;min-width:90px;background:#dbeafe;color:#2563eb;font-size:0.85rem;padding:8px;" onclick="inviteViaWebShare()">📲 Partager...</button>' : '') +
                     '<button class="btn" style="flex:1;min-width:90px;background:#fef3c7;color:#92400e;font-size:0.85rem;padding:8px;" onclick="copyInviteMessage()">📋 Copier message</button>' +
@@ -3481,12 +3481,14 @@
             }
         }
         
-        function inviteViaEmail() {
+        function inviteViaGmail() {
             const ta = document.getElementById('inviteMessage');
             const message = ta ? ta.value : buildInviteMessage();
             const subject = 'Rejoins-moi sur ESPOYR — Code ' + (currentGameCode || '');
-            const mailto = 'mailto:?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(message);
-            window.location.href = mailto;
+            // URL Gmail compose : marche toujours dans le navigateur même sans app mail
+            const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&su=' +
+                             encodeURIComponent(subject) + '&body=' + encodeURIComponent(message);
+            window.open(gmailUrl, '_blank');
         }
         
         function inviteViaWhatsApp() {
