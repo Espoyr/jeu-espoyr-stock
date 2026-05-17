@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213.1 - LOBBY-BOTS-INLINE -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.3 - EQUIP-HINT-CONFIG -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -490,10 +490,15 @@
                         </div>
                         <div id="diceMessage" style="font-size: 0.9rem;">En attente...</div>
                         <div class="dice" id="dice">🎲</div>
-                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
+                            <button id="equiperBtn" class="btn" style="background: #fef3c7; color: #92400e; padding: 8px 14px;" onclick="showQuickEquiper()">🔧 Équipement</button>
+                            <span style="font-weight: bold; color: #6b7280; font-size: 0.95rem;">ou</span>
                             <button class="btn btn-orange" id="rollDiceBtn" onclick="rollDice()">🎲 Lancer</button>
                             <span id="inflationIndicator" style="font-size: 0.8rem; cursor: pointer; padding: 4px 8px; border-radius: 6px; background: #f3f4f6; display: none;" onclick="showInflationModal()">📈 +0% →</span>
                         </div>
+                        <p id="equipementHint" style="text-align:center;font-size:0.78rem;color:#6b7280;margin:4px 0 0;">
+                            💡 Chaque équipement = +<span id="equipBonusPct">10</span>% marge sur les ventes
+                        </p>
                     </div>
                     
                     <!-- ACTIONS RAPIDES -->
@@ -502,7 +507,6 @@
                         <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                             <button class="btn" style="background: #dcfce7; color: #059669; flex: 1; font-size: 0.75rem; padding: 6px;" onclick="showQuickAdhererAAA()"><svg style="display:inline-block;width:1.1em;height:1.1em;vertical-align:middle;" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#FDDB31" stroke="#C4A800" stroke-width="3"/><text x="50" y="58" text-anchor="middle" font-size="48" font-weight="bold" fill="#000" font-family="Arial">#</text><text x="50" y="82" text-anchor="middle" font-size="18" font-weight="bold" fill="#000" font-family="Arial">AAA</text></svg> Devenir membre AAA</button>
                             <button class="btn" style="background: #dbeafe; color: #2563eb; flex: 1; font-size: 0.75rem; padding: 6px;" onclick="showQuickEmprunter()">💶 Emprunter</button>
-                            <button id="equiperBtn" class="btn" style="background: #fef3c7; color: #92400e; flex: 1; font-size: 0.75rem; padding: 6px;" onclick="showQuickEquiper()">📚 Formation</button>
                         </div>
                         <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
                             <button class="btn" style="background: #e0e7ff; color: #4338ca; flex: 1; font-size: 0.75rem; padding: 6px;" onclick="showQuickVendre()">🏷️ Vendre</button>
@@ -9209,6 +9213,7 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
                 `}).join('');
             }
             updateMyBalance(); // MAJ barre solde au-dessus du dé
+            updateEquipementHint(); // Build 213.3 — affichage taux équipement
         }
         
         // ========== LANCEMENT PARTIE ==========
@@ -9781,6 +9786,12 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                     </div>
                     
                     <div>
+                        <label style="font-size: 0.85rem; font-weight: bold;">🔧 Bonus marge par équipement (%)</label>
+                        <input type="number" id="configEquipBonus" value="${Math.round((gameConfig.STOCKS_EQUIP_BONUS ?? CONFIG.STOCKS_EQUIP_BONUS ?? 0.10) * 100)}" min="0" max="100" step="5" style="width: 100%; padding: 8px; margin-top: 4px;">
+                        <p style="font-size: 0.75rem; color: #6b7280;">% de marge supplémentaire ajoutée par chaque équipement</p>
+                    </div>
+                    
+                    <div>
                         <label style="font-size: 0.85rem; font-weight: bold;">🌍 Phase 3 après (passages Ligne 1)</label>
                         <select id="configPhase3Passages" style="width: 100%; padding: 8px; margin-top: 4px;">
                             ${[8, 10, 12, 15, 20, 25, 30].map(v => `<option value="${v}" ${v === (gameConfig.phase3_passagesMin ?? CONFIG.phase3_passagesMin) ? 'selected' : ''}>${v} passages</option>`).join('')}
@@ -9844,6 +9855,12 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
             gameConfig.inflationParTour = (parseFloat(document.getElementById('configInflation').value) || 1) / 100;
             inflationTauxActuel = gameConfig.inflationParTour;
             inflationTauxPrecedent = gameConfig.inflationParTour;
+            // Build 213.3 — Bonus marge par équipement
+            const equipBonusPct = parseInt(document.getElementById('configEquipBonus')?.value);
+            if (!isNaN(equipBonusPct) && equipBonusPct >= 0 && equipBonusPct <= 100) {
+                gameConfig.STOCKS_EQUIP_BONUS = equipBonusPct / 100;
+            }
+            
             gameConfig.phase2_passagesMin = parseInt(document.getElementById('configPhase2Passages').value) || CONFIG.phase2_passagesMin;
             gameConfig.phase3_passagesMin = parseInt(document.getElementById('configPhase3Passages').value) || CONFIG.phase3_passagesMin;
             gameConfig.phase3_tauxEmploiMin = parseInt(document.getElementById('configPhase3Emploi').value) || CONFIG.phase3_tauxEmploiMin;
@@ -9860,6 +9877,7 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
             
             closeModal();
             sendSystemMessage(`⚙️ Configuration mise à jour par ${myName}`);
+            updateEquipementHint(); // Build 213.3 — refresh affichage taux
         }
         
         // Variable pour le timer de décision
@@ -12217,6 +12235,17 @@ function initSystemeDe() {
             } catch (err) {
                 console.error('Erreur nextTurn:', err);
                 nextTurnInProgress = false;  // Reset en cas d'erreur
+            }
+        }
+        
+        // Build 213.3 — Met à jour l'encart pédagogique sous le bouton Équipement
+        function updateEquipementHint() {
+            const el = document.getElementById('equipBonusPct');
+            if (el) {
+                const taux = (typeof gameConfig !== 'undefined' && gameConfig && gameConfig.STOCKS_EQUIP_BONUS !== undefined) 
+                    ? gameConfig.STOCKS_EQUIP_BONUS 
+                    : (CONFIG && CONFIG.STOCKS_EQUIP_BONUS !== undefined ? CONFIG.STOCKS_EQUIP_BONUS : 0.10);
+                el.textContent = Math.round(taux * 100);
             }
         }
         
@@ -19967,11 +19996,22 @@ function initSystemeDe() {
             const prixBase = calculerFactureActivite(caseId, equipTypesP);
             const prixActuel = prixPerso !== null ? prixPerso : prixBase;
             
+            // Build 213.2 : avertissement si module Stocks actif (prix ignoré dans ce mode)
+            const stocksActifs = !!(typeof gameConfig !== 'undefined' && gameConfig && gameConfig.STOCKS_ACTIFS);
+            const avertissementStocks = stocksActifs ? `
+                <div style="background:#fef3c7;border:1px solid #fbbf24;padding:10px;border-radius:8px;margin:10px 0;font-size:0.85rem;">
+                    <strong>⚠️ Module Stocks activé</strong><br>
+                    En mode Stocks, le prix de passage est calculé automatiquement selon
+                    <strong>marge × équipements</strong>. Cet ajustement <strong>n'aura pas d'effet</strong>
+                    sur la vente de stock.<br>
+                    💡 <strong>Pour vendre plus, augmente ton stock</strong> (bouton « Approvisionner »).
+                </div>
+            ` : '';
             showModal(`
                 <h3>💰 Ajuster le prix de passage</h3>
                 <p><strong>${c.icon} ${c.name}</strong></p>
                 <p>Prix de base : ${fmt(prixBase)}€</p>
-                
+                ${avertissementStocks}
                 <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin: 20px 0;">
                     <button class="btn" style="font-size: 1.5rem; padding: 10px 20px;" onclick="ajusterPrix(${caseId}, -10)">➖</button>
                     <div style="font-size: 2rem; font-weight: bold; min-width: 100px; text-align: center;" id="prixAjuste">${fmt(prixActuel)}€</div>
