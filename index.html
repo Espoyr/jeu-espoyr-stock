@@ -1,4 +1,4 @@
- <!-- V3(12) STOCK+COURSES TEST - Build 212.1 - GESTION-BOTS-MVP+HOTFIX -->
+ <!-- V3(12) STOCK+COURSES TEST - Build 212.2 - FIX-MODALES -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -9281,7 +9281,12 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 updates['parties/' + currentGameCode + '/players/' + botId + '/botProfil'] = newProfil;
                 await db.ref().update(updates);
                 
-                // Mise à jour locale immédiate (le listener Firebase étant async)
+                // Build 212.2 — Re-fetch garanti depuis Firebase pour éviter
+                // que le listener async n'écrase notre mise à jour locale.
+                const snap = await gameRef.child('players').once('value');
+                playersData = snap.val() || {};
+                
+                // Sécurité : si Firebase n'a pas encore propagé, on force la maj locale
                 if (playersData[botId]) {
                     playersData[botId].name = newName;
                     playersData[botId].avatar = newAvatar;
@@ -9291,7 +9296,8 @@ Conserve ce fichier pour rejoindre la partie en cas de déconnexion.`;
                 const profLib = PROFILS_IA[newProfil] ? PROFILS_IA[newProfil].nom : newProfil;
                 sendSystemMessage('✏️ Bot modifié : ' + newAvatar + ' ' + newName + ' (' + profLib + ')');
                 closeModal();
-                setTimeout(function() { showAddBotModal(); }, 200);
+                // Appel direct (pas de setTimeout) — playersData est déjà à jour
+                showAddBotModal();
             } catch(e) {
                 console.error('Erreur saveBotEdits:', e);
                 alert('Erreur lors de l\'enregistrement.');
@@ -15621,7 +15627,7 @@ function initSystemeDe() {
             if (interetsPrevus > recettesMoyennes && dette > 500 && (gameState.turn || 1) >= 3 && !spiraleModalShown) {
                 spiraleModalShown = true;
                 
-                // Journal État
+                // Journal État (conservé)
                 COMPTABILITE.etat.journalEtat.push({
                     type: 'SPIRALE_DETECTEE',
                     dette,
@@ -15631,10 +15637,8 @@ function initSystemeDe() {
                     tour: gameState.turn || 1
                 });
                 
-                // Afficher le modal pour l'hôte
-                if (isHost) {
-                    await showModalSpiraleEtat(dette, interetsPrevus, recettesMoyennes);
-                }
+                // Build 212.2 — Plus de modale bloquante. Message système pédagogique uniquement.
+                sendSystemMessage(`⚠️ MESURE GOUVERNEMENTALE : la dette de l'État atteint un niveau critique ! Dette : ${fmt(dette)}€ — Intérêts prévus : ${fmt(interetsPrevus)}€/tour — Recettes moyennes : ${fmt(recettesMoyennes)}€/tour. L'État doit emprunter pour payer ses intérêts → effet boule de neige de la dette publique.`);
             }
         }
         
