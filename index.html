@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213.6 - JITSI-VISIO -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.7 - INVITE-BOX-INGAME -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -529,6 +529,9 @@
                             <button class="btn" style="background: #ede9fe; color: #5b21b6; flex: 1; font-size: 0.75rem; padding: 6px;" onclick="showSmartContractModal()">📜 Smart Contract</button>
                         </div>
                     </div>
+                    
+                    <!-- Build 213.7 — Box partage partie (rendue par renderInviteBoxInGame) -->
+                    <div id="inviteBoxInGame"></div>
                     
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0;">
                         <button class="btn" style="background: #dcfce7; color: #059669; flex: 1;" onclick="showAAAModal()"><svg style="display:inline-block;width:1.1em;height:1.1em;vertical-align:middle;" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#FDDB31" stroke="#C4A800" stroke-width="3"/><text x="50" y="58" text-anchor="middle" font-size="48" font-weight="bold" fill="#000" font-family="Arial">#</text><text x="50" y="82" text-anchor="middle" font-size="18" font-weight="bold" fill="#000" font-family="Arial">AAA</text></svg> Pot AAA</button>
@@ -3529,7 +3532,71 @@
                 if (e.name !== 'AbortError') console.error('Web Share error:', e);
             }
         }
-        // ═══════════════════════════════════════════════════════════════
+        
+        // ─── Build 213.7 — Box partage en cours de partie ───
+        function renderInviteBoxInGame() {
+            const container = document.getElementById('inviteBoxInGame');
+            if (!container) return;
+            if (!currentGameCode) {
+                container.innerHTML = '';
+                container.dataset.code = '';
+                return;
+            }
+            // Évite re-render inutile si le code n'a pas changé
+            if (container.dataset.code === currentGameCode) return;
+            container.dataset.code = currentGameCode;
+            const lien = buildInviteLink();
+            container.innerHTML =
+                '<div style="background:#fef3c7;padding:10px;border-radius:8px;margin:10px 0;border:1px solid #fbbf24;">' +
+                    '<p style="margin:0 0 8px;font-weight:bold;font-size:0.85rem;color:#92400e;">🔗 Partager cette partie</p>' +
+                    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
+                        '<span style="font-size:0.75rem;color:#78350f;min-width:34px;">Code :</span>' +
+                        '<span style="font-family:monospace;font-size:1.2rem;font-weight:bold;letter-spacing:3px;flex:1;color:#78350f;">' + currentGameCode + '</span>' +
+                        '<button class="btn" style="background:#fde68a;color:#78350f;padding:4px 8px;font-size:0.85rem;border:1px solid #fbbf24;" onclick="copyInviteCode()" title="Copier le code">📋</button>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">' +
+                        '<span style="font-size:0.75rem;color:#78350f;min-width:34px;">Lien :</span>' +
+                        '<input type="text" id="inviteBoxLink" value="' + lien + '" readonly style="flex:1;font-size:0.72rem;padding:4px;font-family:monospace;background:white;border:1px solid #fbbf24;border-radius:4px;color:#78350f;">' +
+                        '<button class="btn" style="background:#fde68a;color:#78350f;padding:4px 8px;font-size:0.85rem;border:1px solid #fbbf24;" onclick="copyInviteLinkFromBox()" title="Copier le lien">📋</button>' +
+                    '</div>' +
+                    '<button class="btn btn-full" style="background:#fef3c7;color:#92400e;font-size:0.8rem;padding:6px;border:1px solid #fbbf24;" onclick="showInviteModal()">📤 Plus d\'options (Gmail, WhatsApp, partager...)</button>' +
+                '</div>';
+        }
+        
+        async function copyInviteCode() {
+            if (!currentGameCode) return;
+            const code = currentGameCode;
+            try {
+                await navigator.clipboard.writeText(code);
+                sendSystemMessage('📋 Code copié : ' + code);
+            } catch(e) {
+                // Fallback : sélection manuelle via élément temporaire
+                const tmp = document.createElement('input');
+                tmp.value = code;
+                document.body.appendChild(tmp);
+                tmp.select();
+                try { document.execCommand('copy'); } catch(_) {}
+                document.body.removeChild(tmp);
+                sendSystemMessage('📋 Code copié : ' + code);
+            }
+        }
+        
+        async function copyInviteLinkFromBox() {
+            const lien = buildInviteLink();
+            try {
+                await navigator.clipboard.writeText(lien);
+                sendSystemMessage('🔗 Lien copié dans le presse-papiers');
+            } catch(e) {
+                const inp = document.getElementById('inviteBoxLink');
+                if (inp) {
+                    inp.select();
+                    try { document.execCommand('copy'); } catch(_) {}
+                }
+                sendSystemMessage('🔗 Lien copié');
+            }
+        }
+        
+                // ═══════════════════════════════════════════════════════════════
         // FIN MODULE INVITATION
         // ═══════════════════════════════════════════════════════════════        
         // ═══════════════════════════════════════════════════════════════
@@ -9467,6 +9534,7 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
             }
             updateMyBalance(); // MAJ barre solde au-dessus du dé
             updateEquipementHint(); // Build 213.3 — affichage taux équipement
+            if (typeof renderInviteBoxInGame === 'function') renderInviteBoxInGame(); // Build 213.7 — box partage partie
         }
         
         // ========== LANCEMENT PARTIE ==========
