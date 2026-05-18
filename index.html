@@ -1,4 +1,4 @@
- <!-- V3(13) STOCK+COURSES TEST - Build 213.7 - INVITE-BOX-INGAME -->
+ <!-- V3(13) STOCK+COURSES TEST - Build 213.8 - CONVERT-HUMAN-TO-BOT -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -8542,6 +8542,27 @@ activiteId: actId
         
         // ========== UI HELPERS ==========
         
+        // Build 213.8 — Avertir le joueur converti en bot lors de sa reconnexion
+        let _conversionWarned = false;
+        function checkConvertedHumanWarning() {
+            if (_conversionWarned) return;
+            if (!myPlayerId || !playersData[myPlayerId]) return;
+            const me = playersData[myPlayerId];
+            if (me.isBot === true && me.convertedFromHuman === true) {
+                _conversionWarned = true;
+                setTimeout(function() {
+                    showModal(
+                        '<h3>🤖 Tu as été converti en bot</h3>' +
+                        '<div style="background:#fef3c7;padding:12px;border-radius:8px;margin:10px 0;">' +
+                            '<p style="margin:0;">Pendant ton absence, l\'hôte a converti ton joueur en bot pour permettre à la partie de continuer.</p>' +
+                            '<p style="margin:8px 0 0;font-size:0.9rem;">L\'IA (profil ' + (PROFILS_IA[me.botProfil]?.nom || me.botProfil) + ') prend désormais tes décisions. Tu peux observer la partie en spectateur.</p>' +
+                        '</div>',
+                        '<button class="btn btn-primary" onclick="closeModal()">OK, j\'ai compris</button>'
+                    );
+                }, 500);
+            }
+        }
+        
         function showScreen(screenId) {
             document.querySelectorAll('.card').forEach(c => c.classList.add('hidden'));
             document.getElementById(screenId).classList.remove('hidden');
@@ -8645,9 +8666,125 @@ activiteId: actId
         });
         
         // ========== CRÉER PARTIE ==========
+        // ═══════════════════════════════════════════════════════════════
+        // MODULE CONVERSION HUMAIN → BOT — Build 213.8
+        // ═══════════════════════════════════════════════════════════════
+        
+        function validatePlayerName(name) {
+            const trimmed = (name || '').trim();
+            if (trimmed.length < 2) return 'Prénom obligatoire (au moins 2 caractères).';
+            if (trimmed.length > 30) return 'Prénom trop long (max 30 caractères).';
+            if (/^joueur$/i.test(trimmed)) return 'Le mot \"Joueur\" est réservé. Choisis un vrai prénom.';
+            return null;
+        }
+        
+        function showConvertHumanToBotModal(playerId) {
+            const player = playersData[playerId];
+            if (!player) {
+                showError('Joueur introuvable.');
+                return;
+            }
+            if (player.isBot) {
+                showError('Ce joueur est déjà un bot.');
+                return;
+            }
+            if (!isHost) {
+                showError('Seul l\'hôte peut convertir un joueur en bot.');
+                return;
+            }
+            
+            // Construire les options du select (Équilibré présélectionné)
+            const profils = ['PREDATEUR', 'PRUDENT', 'COOPERATIF', 'EQUILIBRE', 'INVESTISSEUR', 'SOLIDAIRE'];
+            const optionsHtml = profils.map(function(pid) {
+                const def = PROFILS_IA[pid];
+                const selected = (pid === 'EQUILIBRE') ? ' selected' : '';
+                return '<option value="' + pid + '"' + selected + '>' + def.nom + '</option>';
+            }).join('');
+            
+            showModal(
+                '<h3>🤖 Convertir ' + (player.avatar || '') + ' ' + (player.name || '?') + ' en bot ?</h3>' +
+                '<div style="background:#fef3c7;padding:12px;border-radius:8px;margin:10px 0;">' +
+                    '<p style="margin:0 0 6px;font-size:0.9rem;"><strong>⚠️ Cette action :</strong></p>' +
+                    '<ul style="margin:4px 0 0 18px;padding:0;font-size:0.85rem;">' +
+                        '<li>✓ Garde son patrimoine (intégrité comptable)</li>' +
+                        '<li>✓ L\'IA prendra les décisions à sa place</li>' +
+                        '<li>⚠️ <strong>Définitive</strong> pour cette partie</li>' +
+                        '<li>⚠️ Si le joueur revient, il sera en mode spectateur</li>' +
+                    '</ul>' +
+                '</div>' +
+                '<div style="margin:14px 0 6px;">' +
+                    '<label style="font-weight:bold;font-size:0.9rem;">Profil IA pour le bot :</label>' +
+                    '<select id="convertProfilSelect" style="width:100%;padding:8px;margin-top:6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;">' +
+                        optionsHtml +
+                    '</select>' +
+                '</div>',
+                '<button class="btn" style="background:#7c3aed;color:white;" onclick="validerConversionHumainBot(\'' + playerId + '\')">✅ Confirmer la conversion</button>' +
+                '<button class="btn btn-secondary" onclick="closeModal()">Annuler</button>'
+            );
+        }
+        
+        async function validerConversionHumainBot(playerId) {
+            const sel = document.getElementById('convertProfilSelect');
+            const profil = sel ? sel.value : 'EQUILIBRE';
+            closeModal();
+            await convertirHumainEnBot(playerId, profil);
+        }
+        
+        async function convertirHumainEnBot(playerId, profil) {
+            const player = playersData[playerId];
+            if (!player) return;
+            if (player.isBot) return; // déjà bot, no-op
+            if (!isHost) {
+                sendSystemMessage('⚠️ Seul l\'hôte peut convertir un joueur en bot.');
+                return;
+            }
+            
+            const originalName = player.name || 'Joueur';
+            const avatar = player.avatar || '👤';
+            const profilDef = PROFILS_IA[profil] || PROFILS_IA['EQUILIBRE'];
+            
+            try {
+                // 1. Mettre à jour Firebase
+                await db.ref('parties/' + currentGameCode + '/players/' + playerId).update({
+                    isBot: true,
+                    botProfil: profil,
+                    convertedFromHuman: true,
+                    originalName: originalName,
+                    convertedAt: Date.now()
+                });
+                
+                // 2. Mettre à jour local
+                playersData[playerId].isBot = true;
+                playersData[playerId].botProfil = profil;
+                playersData[playerId].convertedFromHuman = true;
+                playersData[playerId].originalName = originalName;
+                
+                // 3. Notification
+                sendSystemMessage('🤖 ' + avatar + ' ' + originalName + ' converti en bot (' + profilDef.nom + ') par l\'hôte. L\'IA gère désormais.');
+                
+                // 4. Si c'est le joueur courant qui est converti, on enchaîne avec forceNextTurn
+                // pour que l'IA puisse prendre la main au tour suivant
+                const players = getOrderedPlayers();
+                const idx = gameState?.currentPlayerIndex || 0;
+                const current = players[idx];
+                if (current && current.id === playerId) {
+                    setTimeout(function() { forceNextTurn(); }, 300);
+                }
+            } catch(e) {
+                console.error('convertirHumainEnBot:', e);
+                showError('Erreur lors de la conversion : ' + (e.message || 'inconnue'));
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════════════════
+        // FIN MODULE CONVERSION HUMAIN → BOT
+        // ═══════════════════════════════════════════════════════════════
+        
         async function createGame() {
             myName = document.getElementById('playerName').value.trim();
-            if (!myName) { showError('Entre ton nom !'); return; }
+            // Build 213.8 — Validation renforcée
+            const errPrenom = validatePlayerName(myName);
+            if (errPrenom) { showError(errPrenom); return; }
 
             // Choix Solo / Multi (le robot reste optionnel dans les deux modes)
             chooseGameMode().then(({ mode, minPlayers, diceMode }) => {
@@ -9001,7 +9138,9 @@ activiteId: actId
         // ========== REJOINDRE PARTIE ==========
         async function joinGame() {
             myName = document.getElementById('playerName').value.trim();
-            if (!myName) { showError('Entre ton nom !'); return; }
+            // Build 213.8 — Validation renforcée
+            const errPrenom = validatePlayerName(myName);
+            if (errPrenom) { showError(errPrenom); return; }
             
             const code = document.getElementById('gameCode').value.trim().toUpperCase();
             if (!code || code.length !== 6) { showError('Code invalide !'); return; }
@@ -9533,6 +9672,7 @@ if (gameData.status !== 'waiting') { showError('Partie déjà commencée !'); re
                 `}).join('');
             }
             updateMyBalance(); // MAJ barre solde au-dessus du dé
+            if (typeof checkConvertedHumanWarning === 'function') checkConvertedHumanWarning(); // Build 213.8
             updateEquipementHint(); // Build 213.3 — affichage taux équipement
             if (typeof renderInviteBoxInGame === 'function') renderInviteBoxInGame(); // Build 213.7 — box partage partie
         }
@@ -16130,6 +16270,12 @@ function initSystemeDe() {
                     ? `<span style="color:#f59e0b;font-weight:bold;">⏳ ${current?.name || 'Joueur'} bloqué (${elapsed}s)</span>`
                     : `<span style="color:#f59e0b;">🟡 Inactif depuis ${elapsed}s</span>`;
             
+            // Build 213.8 — Bouton convertir-en-bot si joueur humain
+            const peutConvertir = current && !current.isBot && isHost;
+            const btnConvertir = peutConvertir
+                ? '<button class="btn" style="background:#7c3aed;color:white;margin-top:6px;" onclick="closeModal(); setTimeout(function(){showConvertHumanToBotModal(\'' + current.id + '\');}, 100);">🤖 Convertir en bot et continuer</button>'
+                : '';
+            
             showModal(`
                 <h3>⏭️ Forcer le tour suivant ?</h3>
                 <div style="background:#fef3c7;padding:10px;border-radius:8px;margin:10px 0;">
@@ -16140,8 +16286,11 @@ function initSystemeDe() {
                     ⚠️ Son action en cours sera annulée et le tour passera au joueur suivant.
                 </p>
             `, `
-                <button class="btn" style="background:#dc2626;color:white;" onclick="forceNextTurn()">⏭️ Confirmer — Passer le tour</button>
-                <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+                <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
+                    <button class="btn" style="background:#dc2626;color:white;" onclick="forceNextTurn()">⏭️ Confirmer — Passer le tour</button>
+                    ${btnConvertir}
+                    <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+                </div>
             `);
         }
         
